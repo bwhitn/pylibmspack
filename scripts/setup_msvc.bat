@@ -1,8 +1,18 @@
 @echo off
 setlocal
 
-if "%CIBW_ARCH%"=="" (
-  echo CIBW_ARCH is not set.
+set "ARCH=%CIBW_ARCH%"
+if "%ARCH%"=="" (
+  if not "%CIBW_BUILD_IDENTIFIER%"=="" (
+    echo %CIBW_BUILD_IDENTIFIER% | findstr /i "win_arm64" >nul
+    if not errorlevel 1 set "ARCH=ARM64"
+    echo %CIBW_BUILD_IDENTIFIER% | findstr /i "win_amd64" >nul
+    if not errorlevel 1 set "ARCH=AMD64"
+  )
+)
+
+if "%ARCH%"=="" (
+  echo CIBW_ARCH is not set and could not be inferred.
   exit /b 1
 )
 
@@ -24,9 +34,9 @@ if not exist "%VSCVARS%" (
   exit /b 1
 )
 
-set "TARGET=%CIBW_ARCH%"
-if /I "%CIBW_ARCH%"=="ARM64" set "TARGET=amd64_arm64"
-if /I "%CIBW_ARCH%"=="AMD64" set "TARGET=amd64"
+set "TARGET=%ARCH%"
+if /I "%ARCH%"=="ARM64" set "TARGET=amd64_arm64"
+if /I "%ARCH%"=="AMD64" set "TARGET=amd64"
 
 call "%VSCVARS%" %TARGET%
 if errorlevel 1 exit /b 1
