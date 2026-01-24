@@ -72,6 +72,7 @@ class BuildExt(build_ext):
             pkg_dylibs = build_lib / "pymspack" / ".dylibs"
             pkg_dylibs.mkdir(parents=True, exist_ok=True)
             shutil.copy2(shared_lib, pkg_dylibs / shared_lib.name)
+            shutil.copy2(shared_lib, build_lib / "pymspack" / shared_lib.name)
 
 
 ext_modules = [
