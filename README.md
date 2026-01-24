@@ -10,6 +10,8 @@ pip install pymspack
 
 If the distribution name ever conflicts on PyPI, the fallback project name will be **pymspack2** while keeping the import name `pymspack`.
 
+Supports Python 3.9 through 3.13.
+
 ## Usage
 
 ```python

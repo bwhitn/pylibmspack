@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <errno.h>
 #include <sys/types.h>
+#ifdef __APPLE__
+#include <dlfcn.h>
+#endif
 
 #ifndef MSCABD_COMP_MASK
 #define MSCABD_COMP_MASK 0x000f
@@ -74,6 +77,52 @@ static unsigned int dos_time_from_parts(int hour, int minute, int second) {
     if (minute < 0 || minute > 59) return 0;
     if (second < 0 || second > 59) return 0;
     return (unsigned int)((hour << 11) | (minute << 5) | (second / 2));
+}
+
+struct mscab_decompressor;
+
+#ifdef __APPLE__
+typedef struct mscab_decompressor *(*cabd_create_fn)(struct mspack_system *sys);
+typedef void (*cabd_destroy_fn)(struct mscab_decompressor *self);
+static cabd_create_fn g_cabd_create = NULL;
+static cabd_destroy_fn g_cabd_destroy = NULL;
+static void *g_mspack_handle = NULL;
+
+static int ensure_mspack_loaded(void) {
+    if (g_cabd_create && g_cabd_destroy) {
+        return 0;
+    }
+    const char *path = "@loader_path/.libs/libmspack.dylib";
+    g_mspack_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    if (!g_mspack_handle) {
+        return -1;
+    }
+    g_cabd_create = (cabd_create_fn)dlsym(g_mspack_handle, "mspack_create_cab_decompressor");
+    g_cabd_destroy = (cabd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_cab_decompressor");
+    if (!g_cabd_create || !g_cabd_destroy) {
+        return -1;
+    }
+    return 0;
+}
+#endif
+
+static struct mscab_decompressor *cabd_create(struct mspack_system *sys) {
+#ifdef __APPLE__
+    if (ensure_mspack_loaded() != 0) return NULL;
+    return g_cabd_create(sys);
+#else
+    return mspack_create_cab_decompressor(sys);
+#endif
+}
+
+static void cabd_destroy(struct mscab_decompressor *cabd) {
+#ifdef __APPLE__
+    if (g_cabd_destroy) {
+        g_cabd_destroy(cabd);
+    }
+#else
+    mspack_destroy_cab_decompressor(cabd);
+#endif
 }
 
 struct memcab_system;
@@ -355,7 +404,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
     }
     path = PyBytes_AS_STRING(path_bytes);
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(NULL);
+    struct mscab_decompressor *cabd = cabd_create(NULL);
     if (!cabd) {
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -364,7 +413,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, path);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, err);
     }
@@ -372,7 +421,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
     PyObject *list = PyList_New(0);
     if (!list) {
         cabd->close(cabd, cab);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(path_bytes);
         return NULL;
     }
@@ -386,7 +435,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
         if (!dict) {
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -400,7 +449,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -414,7 +463,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -428,7 +477,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -440,7 +489,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -451,7 +500,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -464,7 +513,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -474,7 +523,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -495,7 +544,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -506,7 +555,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 Py_DECREF(path_bytes);
                 return NULL;
             }
@@ -515,7 +564,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 Py_DECREF(path_bytes);
                 return NULL;
             }
@@ -525,7 +574,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 Py_DECREF(path_bytes);
                 return NULL;
             }
@@ -535,7 +584,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             Py_DECREF(path_bytes);
             return NULL;
         }
@@ -544,7 +593,7 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     Py_DECREF(path_bytes);
 
     return Py_BuildValue("Oi", list, MSPACK_ERR_OK);
@@ -574,7 +623,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
     sys.sys.copy = mem_copy;
     sys.sys.null_ptr = NULL;
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(&sys.sys);
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         PyBuffer_Release(&buf);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -583,7 +632,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, mem_name);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         PyBuffer_Release(&buf);
         return Py_BuildValue("Oi", Py_None, err);
     }
@@ -591,7 +640,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
     PyObject *list = PyList_New(0);
     if (!list) {
         cabd->close(cabd, cab);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         PyBuffer_Release(&buf);
         return NULL;
     }
@@ -605,7 +654,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
         if (!dict) {
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -619,7 +668,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -633,7 +682,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -647,7 +696,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -659,7 +708,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -670,7 +719,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -683,7 +732,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -693,7 +742,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -714,7 +763,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -725,7 +774,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 PyBuffer_Release(&buf);
                 return NULL;
             }
@@ -734,7 +783,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 PyBuffer_Release(&buf);
                 return NULL;
             }
@@ -744,7 +793,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
                 Py_DECREF(dict);
                 Py_DECREF(list);
                 cabd->close(cabd, cab);
-                mspack_destroy_cab_decompressor(cabd);
+                cabd_destroy(cabd);
                 PyBuffer_Release(&buf);
                 return NULL;
             }
@@ -754,7 +803,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
-            mspack_destroy_cab_decompressor(cabd);
+            cabd_destroy(cabd);
             PyBuffer_Release(&buf);
             return NULL;
         }
@@ -763,7 +812,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     PyBuffer_Release(&buf);
 
     return Py_BuildValue("Oi", list, MSPACK_ERR_OK);
@@ -798,7 +847,7 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     const char *name = PyBytes_AS_STRING(name_bytes);
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(NULL);
+    struct mscab_decompressor *cabd = cabd_create(NULL);
     if (!cabd) {
         Py_DECREF(path_bytes);
         Py_DECREF(name_bytes);
@@ -809,7 +858,7 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, path);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(path_bytes);
         Py_DECREF(name_bytes);
         Py_DECREF(out_bytes);
@@ -830,7 +879,7 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     Py_DECREF(path_bytes);
     Py_DECREF(name_bytes);
     Py_DECREF(out_bytes);
@@ -880,7 +929,7 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     sys.sys.copy = mem_copy;
     sys.sys.null_ptr = NULL;
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(&sys.sys);
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         Py_DECREF(name_bytes);
         Py_DECREF(out_bytes);
@@ -891,7 +940,7 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, mem_name);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(name_bytes);
         Py_DECREF(out_bytes);
         PyBuffer_Release(&buf);
@@ -912,7 +961,7 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     Py_DECREF(name_bytes);
     Py_DECREF(out_bytes);
     PyBuffer_Release(&buf);
@@ -933,7 +982,7 @@ static PyObject *py_cab_info(PyObject *self, PyObject *args) {
     }
     path = PyBytes_AS_STRING(path_bytes);
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(NULL);
+    struct mscab_decompressor *cabd = cabd_create(NULL);
     if (!cabd) {
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -942,7 +991,7 @@ static PyObject *py_cab_info(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, path);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, err);
     }
@@ -950,13 +999,13 @@ static PyObject *py_cab_info(PyObject *self, PyObject *args) {
     PyObject *dict = build_cab_info(cab, NULL);
     if (!dict) {
         cabd->close(cabd, cab);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         Py_DECREF(path_bytes);
         return NULL;
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     Py_DECREF(path_bytes);
 
     return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
@@ -986,7 +1035,7 @@ static PyObject *py_cab_info_bytes(PyObject *self, PyObject *args) {
     sys.sys.copy = mem_copy;
     sys.sys.null_ptr = NULL;
 
-    struct mscab_decompressor *cabd = mspack_create_cab_decompressor(&sys.sys);
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         PyBuffer_Release(&buf);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -995,7 +1044,7 @@ static PyObject *py_cab_info_bytes(PyObject *self, PyObject *args) {
     struct mscabd_cabinet *cab = cabd->open(cabd, mem_name);
     if (!cab) {
         int err = cabd->last_error(cabd);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         PyBuffer_Release(&buf);
         return Py_BuildValue("Oi", Py_None, err);
     }
@@ -1003,13 +1052,13 @@ static PyObject *py_cab_info_bytes(PyObject *self, PyObject *args) {
     PyObject *dict = build_cab_info(cab, mem_name);
     if (!dict) {
         cabd->close(cabd, cab);
-        mspack_destroy_cab_decompressor(cabd);
+        cabd_destroy(cabd);
         PyBuffer_Release(&buf);
         return NULL;
     }
 
     cabd->close(cabd, cab);
-    mspack_destroy_cab_decompressor(cabd);
+    cabd_destroy(cabd);
     PyBuffer_Release(&buf);
 
     return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
@@ -1036,6 +1085,13 @@ static struct PyModuleDef cabmodule = {
 PyMODINIT_FUNC PyInit__cab(void) {
     PyObject *m = PyModule_Create(&cabmodule);
     if (!m) return NULL;
+#ifdef __APPLE__
+    if (ensure_mspack_loaded() != 0) {
+        PyErr_SetString(PyExc_ImportError, "Failed to load libmspack.dylib");
+        Py_DECREF(m);
+        return NULL;
+    }
+#endif
     PyModule_AddIntConstant(m, "MSPACK_ERR_OK", MSPACK_ERR_OK);
     PyModule_AddIntConstant(m, "MSPACK_ERR_ARGS", MSPACK_ERR_ARGS);
     PyModule_AddIntConstant(m, "MSPACK_ERR_DATAFORMAT", MSPACK_ERR_DATAFORMAT);
