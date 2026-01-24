@@ -25,7 +25,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
       - name: Verify vendored libmspack tarball
         run: >
-          python -c "from pathlib import Path; path=Path('src/pymspack/vendor/libmspack_0.10.1.orig.tar.xz');
+          python -c "from pathlib import Path; path=Path('src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz');
           (path.exists() or (_ for _ in ()).throw(SystemExit(f'Missing vendored tarball: {path}')));
           print(f'Found {path}')"
       - name: Install cibuildwheel

@@ -604,7 +604,7 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    const char *mem_name = "pymspack:memcab";
+    const char *mem_name = "pylibmspack:memcab";
     struct memcab_system sys;
     memset(&sys, 0, sizeof(sys));
     sys.data = (const unsigned char *)buf.buf;
@@ -910,7 +910,7 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     const char *name = PyBytes_AS_STRING(name_bytes);
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
-    const char *mem_name = "pymspack:memcab";
+    const char *mem_name = "pylibmspack:memcab";
     struct memcab_system sys;
     memset(&sys, 0, sizeof(sys));
     sys.data = (const unsigned char *)buf.buf;
@@ -1016,7 +1016,7 @@ static PyObject *py_cab_info_bytes(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    const char *mem_name = "pymspack:memcab";
+    const char *mem_name = "pylibmspack:memcab";
     struct memcab_system sys;
     memset(&sys, 0, sizeof(sys));
     sys.data = (const unsigned char *)buf.buf;

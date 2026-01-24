@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pymspack"
+name = "pylibmspack"
 version = "0.1.0"
 description = "In-process libmspack bindings for Microsoft CAB files"
 readme = "README.md"
@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/pymspack"
+Homepage = "https://github.com/bwhitn/pylibmspack"
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -41,7 +41,7 @@ build = "cp39-* cp310-* cp311-* cp312-*"
 skip = "*-musllinux*"
 
 [tool.cibuildwheel.environment]
-PYMSPACK_LIBMSPACK_VERSION = "0.10.1"
+PYLIBMSPACK_LIBMSPACK_VERSION = "0.10.1"
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"

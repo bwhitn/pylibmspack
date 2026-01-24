@@ -38,7 +38,7 @@ class BuildExt(build_ext):
             str(info_path),
         ]
         env = os.environ.copy()
-        env.setdefault("PYMSPACK_LIBMSPACK_VERSION", "0.10.1")
+        env.setdefault("PYLIBMSPACK_LIBMSPACK_VERSION", "0.10.1")
         subprocess.check_call(cmd, env=env)
 
         with info_path.open("r", encoding="utf-8") as f:
@@ -65,20 +65,20 @@ class BuildExt(build_ext):
         if not shared_lib.exists():
             return
         build_lib = Path(self.build_lib)
-        pkg_libs = build_lib / "pymspack" / ".libs"
+        pkg_libs = build_lib / "pylibmspack" / ".libs"
         pkg_libs.mkdir(parents=True, exist_ok=True)
         shutil.copy2(shared_lib, pkg_libs / shared_lib.name)
         if sys.platform == "darwin":
-            pkg_dylibs = build_lib / "pymspack" / ".dylibs"
+            pkg_dylibs = build_lib / "pylibmspack" / ".dylibs"
             pkg_dylibs.mkdir(parents=True, exist_ok=True)
             shutil.copy2(shared_lib, pkg_dylibs / shared_lib.name)
-            shutil.copy2(shared_lib, build_lib / "pymspack" / shared_lib.name)
+            shutil.copy2(shared_lib, build_lib / "pylibmspack" / shared_lib.name)
 
 
 ext_modules = [
     Extension(
-        "pymspack._cab",
-        sources=["src/pymspack/_cab.c"],
+        "pylibmspack._cab",
+        sources=["src/pylibmspack/_cab.c"],
         include_dirs=[],
         libraries=[],
         library_dirs=[],

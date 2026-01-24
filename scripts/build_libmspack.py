@@ -11,13 +11,13 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-LIBMSPACK_VERSION = os.environ.get("PYMSPACK_LIBMSPACK_VERSION", "0.10.1")
+LIBMSPACK_VERSION = os.environ.get("PYLIBMSPACK_LIBMSPACK_VERSION", "0.10.1")
 LIBMSPACK_URL = (
     "https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/libmspack/"
     "0.10.1-2build2/libmspack_0.10.1.orig.tar.xz"
 )
 LIBMSPACK_SHA256 = "850c57442b850bf1bc0fc4ea8880903ebf2bed063c3c80782ee4626fbcb0e67d"
-VENDORED_TARBALL = Path(__file__).resolve().parents[1] / "src" / "pymspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
+VENDORED_TARBALL = Path(__file__).resolve().parents[1] / "src" / "pylibmspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
 
 SOURCES = [
     "mspack/system.c",
@@ -190,13 +190,13 @@ def main() -> None:
     if not tarball.exists():
         if VENDORED_TARBALL.exists():
             tarball = VENDORED_TARBALL
-        elif os.environ.get("PYMSPACK_ALLOW_DOWNLOAD") == "1":
+        elif os.environ.get("PYLIBMSPACK_ALLOW_DOWNLOAD") == "1":
             download(LIBMSPACK_URL, tarball, LIBMSPACK_SHA256)
         else:
             raise RuntimeError(
                 "Vendored libmspack source tarball is missing. "
-                "Expected src/pymspack/vendor/libmspack_0.10.1.orig.tar.xz. "
-                "To allow a network download, set PYMSPACK_ALLOW_DOWNLOAD=1 "
+                "Expected src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz. "
+                "To allow a network download, set PYLIBMSPACK_ALLOW_DOWNLOAD=1 "
                 "or pass --tarball."
             )
     elif tarball == VENDORED_TARBALL:

@@ -1,7 +1,7 @@
 class CabError(Exception):
     """Base error for CAB handling.
 
-    All pymspack exceptions derive from this type.
+    All pylibmspack exceptions derive from this type.
     """
 
 

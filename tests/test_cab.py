@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pymspack import CabArchive, CabPathTraversalError
+from pylibmspack import CabArchive, CabPathTraversalError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"

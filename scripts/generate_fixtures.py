@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
-VENDORED = ROOT / "src" / "pymspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
+VENDORED = ROOT / "src" / "pylibmspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
 
 
 def main():

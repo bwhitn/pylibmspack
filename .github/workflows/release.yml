@@ -29,7 +29,7 @@ jobs:
           python-version: "3.11"
       - name: Verify vendored libmspack tarball
         run: >
-          python -c "from pathlib import Path; path=Path('src/pymspack/vendor/libmspack_0.10.1.orig.tar.xz');
+          python -c "from pathlib import Path; path=Path('src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz');
           (path.exists() or (_ for _ in ()).throw(SystemExit(f'Missing vendored tarball: {path}')));
           print(f'Found {path}')"
       - name: Install build tools
@@ -122,7 +122,7 @@ jobs:
     needs: [publish-testpypi]
     environment:
       name: pypi
-      url: https://pypi.org/project/pymspack/
+      url: https://pypi.org/project/pylibmspack/
     steps:
       - uses: actions/download-artifact@v4
         with:

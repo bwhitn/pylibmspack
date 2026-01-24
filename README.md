@@ -1,21 +1,19 @@
-# pymspack
+# pylibmspack
 
-`pymspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB files, including Quantum and LZX cabinets. It is a CPython extension (no subprocess calls).
+`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB files, including Quantum and LZX cabinets. It is a CPython extension (no subprocess calls).
 
 ## Install
 
 ```bash
-pip install pymspack
+pip install pylibmspack
 ```
-
-If the distribution name ever conflicts on PyPI, the fallback project name will be **pymspack2** while keeping the import name `pymspack`.
 
 Supports Python 3.9 through 3.13.
 
 ## Usage
 
 ```python
-from pymspack import CabArchive
+from pylibmspack import CabArchive
 
 cab = CabArchive("example.cab")
 print(cab.files())
@@ -30,7 +28,7 @@ cab.extract_all("./out")
 ### In-memory usage
 
 ```python
-from pymspack import CabArchive
+from pylibmspack import CabArchive
 
 data = open("example.cab", "rb").read()
 cab = CabArchive.from_bytes(data)
@@ -44,7 +42,7 @@ payload = cab.read("hello.txt")
 ### Safe vs raw extraction
 
 ```python
-from pymspack import CabArchive, CabPathTraversalError
+from pylibmspack import CabArchive, CabPathTraversalError
 
 cab = CabArchive("example.cab")
 try:
@@ -59,7 +57,7 @@ cab.extract_all_raw("./out-raw")
 ### Multi-cabinet sets
 
 ```python
-from pymspack import CabArchive
+from pylibmspack import CabArchive
 
 cab = CabArchive("part1.cab")
 info = cab.info()
@@ -167,18 +165,18 @@ Use `safe=False` to allow the original paths.
 
 ## Build from source
 
-This project uses setuptools and builds a shared `libmspack` that is bundled into wheels. A pinned libmspack source tarball is included under `pymspack/vendor/` and used for offline builds (SHA-256 verified).
+This project uses setuptools and builds a shared `libmspack` that is bundled into wheels. A pinned libmspack source tarball is included under `pylibmspack/vendor/` and used for offline builds (SHA-256 verified).
 
 ```bash
 python -m pip install -U pip setuptools wheel
 python -m pip install -e .
 ```
 
-If you want to supply a local tarball, pass `--tarball` to `scripts/build_libmspack.py`. To allow a network download during builds, set `PYMSPACK_ALLOW_DOWNLOAD=1` (disabled by default).
+If you want to supply a local tarball, pass `--tarball` to `scripts/build_libmspack.py`. To allow a network download during builds, set `PYLIBMSPACK_ALLOW_DOWNLOAD=1` (disabled by default).
 
 ## Licensing
 
-- **pymspack** code is MIT licensed.
-- Wheels bundle **libmspack** under LGPL-2.1. The corresponding libmspack source tarball is included under `pymspack/vendor/`. You may replace the shared library inside `pymspack/.libs` with a compatible build.
+- **pylibmspack** code is MIT licensed.
+- Wheels bundle **libmspack** under LGPL-2.1. The corresponding libmspack source tarball is included under `pylibmspack/vendor/`. You may replace the shared library inside `pylibmspack/.libs` with a compatible build.
 
 See `THIRD_PARTY_LICENSES/LGPL-2.1.txt` and `NOTICE` for details.

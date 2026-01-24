@@ -229,7 +229,7 @@ class CabArchive:
         """
         if max_size <= 0:
             raise ValueError("max_size must be positive")
-        with tempfile.TemporaryDirectory(prefix="pymspack-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="pylibmspack-") as tmp:
             out_path = _safe_join(tmp, name)
             _ensure_parent(out_path)
             if self._data is not None:
