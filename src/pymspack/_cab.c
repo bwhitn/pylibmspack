@@ -23,17 +23,17 @@
 #define MSCABD_COMP_LZX 0x0003
 #endif
 
-#ifndef MSCABD_ATTR_READONLY
-#define MSCABD_ATTR_READONLY 0x01
+#ifndef MSCAB_ATTRIB_RDONLY
+#define MSCAB_ATTRIB_RDONLY 0x01
 #endif
-#ifndef MSCABD_ATTR_HIDDEN
-#define MSCABD_ATTR_HIDDEN 0x02
+#ifndef MSCAB_ATTRIB_HIDDEN
+#define MSCAB_ATTRIB_HIDDEN 0x02
 #endif
-#ifndef MSCABD_ATTR_SYSTEM
-#define MSCABD_ATTR_SYSTEM 0x04
+#ifndef MSCAB_ATTRIB_SYSTEM
+#define MSCAB_ATTRIB_SYSTEM 0x04
 #endif
-#ifndef MSCABD_ATTR_ARCHIVE
-#define MSCABD_ATTR_ARCHIVE 0x20
+#ifndef MSCAB_ATTRIB_ARCH
+#define MSCAB_ATTRIB_ARCH 0x20
 #endif
 
 #ifndef MSPACK_ERR_OK
@@ -60,6 +60,20 @@ static PyObject *decode_filename(const char *name) {
         Py_RETURN_NONE;
     }
     return PyUnicode_DecodeUTF8(name, (Py_ssize_t)strlen(name), "surrogateescape");
+}
+
+static unsigned int dos_date_from_parts(int year, int month, int day) {
+    if (year < 1980 || year > 2107) return 0;
+    if (month < 1 || month > 12) return 0;
+    if (day < 1 || day > 31) return 0;
+    return (unsigned int)(((year - 1980) << 9) | (month << 5) | day);
+}
+
+static unsigned int dos_time_from_parts(int hour, int minute, int second) {
+    if (hour < 0 || hour > 23) return 0;
+    if (minute < 0 || minute > 59) return 0;
+    if (second < 0 || second > 59) return 0;
+    return (unsigned int)((hour << 11) | (minute << 5) | (second / 2));
 }
 
 struct memcab_system;
@@ -391,9 +405,11 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             return NULL;
         }
 
+        unsigned int dos_date = dos_date_from_parts(file->date_y, file->date_m, file->date_d);
+        unsigned int dos_time = dos_time_from_parts(file->time_h, file->time_m, file->time_s);
         if (dict_set_owned(dict, "size", PyLong_FromUnsignedLong((unsigned long)file->length)) < 0 ||
-            dict_set_owned(dict, "dos_date", PyLong_FromUnsignedLong((unsigned long)file->date)) < 0 ||
-            dict_set_owned(dict, "dos_time", PyLong_FromUnsignedLong((unsigned long)file->time)) < 0 ||
+            dict_set_owned(dict, "dos_date", PyLong_FromUnsignedLong((unsigned long)dos_date)) < 0 ||
+            dict_set_owned(dict, "dos_time", PyLong_FromUnsignedLong((unsigned long)dos_time)) < 0 ||
             dict_set_owned(dict, "attrs", PyLong_FromUnsignedLong((unsigned long)file->attribs)) < 0) {
             Py_DECREF(dict);
             Py_DECREF(list);
@@ -403,10 +419,24 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
             return NULL;
         }
 
-        if (dict_set_owned(dict, "is_readonly", PyBool_FromLong((file->attribs & MSCABD_ATTR_READONLY) != 0)) < 0 ||
-            dict_set_owned(dict, "is_hidden", PyBool_FromLong((file->attribs & MSCABD_ATTR_HIDDEN) != 0)) < 0 ||
-            dict_set_owned(dict, "is_system", PyBool_FromLong((file->attribs & MSCABD_ATTR_SYSTEM) != 0)) < 0 ||
-            dict_set_owned(dict, "is_archive", PyBool_FromLong((file->attribs & MSCABD_ATTR_ARCHIVE) != 0)) < 0) {
+        if (dict_set_owned(dict, "date_y", PyLong_FromLong((long)file->date_y)) < 0 ||
+            dict_set_owned(dict, "date_m", PyLong_FromLong((long)file->date_m)) < 0 ||
+            dict_set_owned(dict, "date_d", PyLong_FromLong((long)file->date_d)) < 0 ||
+            dict_set_owned(dict, "time_h", PyLong_FromLong((long)file->time_h)) < 0 ||
+            dict_set_owned(dict, "time_m", PyLong_FromLong((long)file->time_m)) < 0 ||
+            dict_set_owned(dict, "time_s", PyLong_FromLong((long)file->time_s)) < 0) {
+            Py_DECREF(dict);
+            Py_DECREF(list);
+            cabd->close(cabd, cab);
+            mspack_destroy_cab_decompressor(cabd);
+            Py_DECREF(path_bytes);
+            return NULL;
+        }
+
+        if (dict_set_owned(dict, "is_readonly", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_RDONLY) != 0)) < 0 ||
+            dict_set_owned(dict, "is_hidden", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_HIDDEN) != 0)) < 0 ||
+            dict_set_owned(dict, "is_system", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_SYSTEM) != 0)) < 0 ||
+            dict_set_owned(dict, "is_archive", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_ARCH) != 0)) < 0) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);
@@ -594,9 +624,11 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             return NULL;
         }
 
+        unsigned int dos_date = dos_date_from_parts(file->date_y, file->date_m, file->date_d);
+        unsigned int dos_time = dos_time_from_parts(file->time_h, file->time_m, file->time_s);
         if (dict_set_owned(dict, "size", PyLong_FromUnsignedLong((unsigned long)file->length)) < 0 ||
-            dict_set_owned(dict, "dos_date", PyLong_FromUnsignedLong((unsigned long)file->date)) < 0 ||
-            dict_set_owned(dict, "dos_time", PyLong_FromUnsignedLong((unsigned long)file->time)) < 0 ||
+            dict_set_owned(dict, "dos_date", PyLong_FromUnsignedLong((unsigned long)dos_date)) < 0 ||
+            dict_set_owned(dict, "dos_time", PyLong_FromUnsignedLong((unsigned long)dos_time)) < 0 ||
             dict_set_owned(dict, "attrs", PyLong_FromUnsignedLong((unsigned long)file->attribs)) < 0) {
             Py_DECREF(dict);
             Py_DECREF(list);
@@ -606,10 +638,24 @@ static PyObject *py_cab_list_bytes(PyObject *self, PyObject *args) {
             return NULL;
         }
 
-        if (dict_set_owned(dict, "is_readonly", PyBool_FromLong((file->attribs & MSCABD_ATTR_READONLY) != 0)) < 0 ||
-            dict_set_owned(dict, "is_hidden", PyBool_FromLong((file->attribs & MSCABD_ATTR_HIDDEN) != 0)) < 0 ||
-            dict_set_owned(dict, "is_system", PyBool_FromLong((file->attribs & MSCABD_ATTR_SYSTEM) != 0)) < 0 ||
-            dict_set_owned(dict, "is_archive", PyBool_FromLong((file->attribs & MSCABD_ATTR_ARCHIVE) != 0)) < 0) {
+        if (dict_set_owned(dict, "date_y", PyLong_FromLong((long)file->date_y)) < 0 ||
+            dict_set_owned(dict, "date_m", PyLong_FromLong((long)file->date_m)) < 0 ||
+            dict_set_owned(dict, "date_d", PyLong_FromLong((long)file->date_d)) < 0 ||
+            dict_set_owned(dict, "time_h", PyLong_FromLong((long)file->time_h)) < 0 ||
+            dict_set_owned(dict, "time_m", PyLong_FromLong((long)file->time_m)) < 0 ||
+            dict_set_owned(dict, "time_s", PyLong_FromLong((long)file->time_s)) < 0) {
+            Py_DECREF(dict);
+            Py_DECREF(list);
+            cabd->close(cabd, cab);
+            mspack_destroy_cab_decompressor(cabd);
+            PyBuffer_Release(&buf);
+            return NULL;
+        }
+
+        if (dict_set_owned(dict, "is_readonly", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_RDONLY) != 0)) < 0 ||
+            dict_set_owned(dict, "is_hidden", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_HIDDEN) != 0)) < 0 ||
+            dict_set_owned(dict, "is_system", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_SYSTEM) != 0)) < 0 ||
+            dict_set_owned(dict, "is_archive", PyBool_FromLong((file->attribs & MSCAB_ATTRIB_ARCH) != 0)) < 0) {
             Py_DECREF(dict);
             Py_DECREF(list);
             cabd->close(cabd, cab);

@@ -39,7 +39,7 @@ print(info["files_count"], info["flags"])
 payload = cab.read("hello.txt")
 ```
 
-### Safe extraction patterns
+### Safe vs raw extraction
 
 ```python
 from pymspack import CabArchive, CabPathTraversalError
@@ -49,6 +49,9 @@ try:
     cab.extract_all("./out", safe=True)
 except CabPathTraversalError as exc:
     print("Blocked unsafe path:", exc)
+
+# Raw extraction (no safety checks)
+cab.extract_all_raw("./out-raw")
 ```
 
 ### Multi-cabinet sets
@@ -89,6 +92,9 @@ Return metadata for each member as a `CabFileInfo` TypedDict. Each entry include
 - `size` (int)
 - `dos_date` (int)
 - `dos_time` (int)
+- `date_y` / `date_m` / `date_d` (int)
+- `time_h` / `time_m` / `time_s` (int)
+- `datetime_utc` (str, ISO 8601)
 - `attrs` (int)
 - `is_readonly` / `is_hidden` / `is_system` / `is_archive` (bool)
 - `folder_index` (int)
@@ -109,6 +115,14 @@ Extract a member to disk and return the output path. When `safe=True`, absolute 
 ### CabArchive.extract_all(dest_dir: str, *, safe: bool = True) -> list[str]
 
 Extract all members to disk and return output paths.
+
+### CabArchive.extract_raw(name: str, dest_dir: str) -> str
+
+Extract a member using the raw path (no safety checks).
+
+### CabArchive.extract_all_raw(dest_dir: str) -> list[str]
+
+Extract all members using raw paths (no safety checks).
 
 ### CabArchive.from_bytes(data: bytes) -> CabArchive
 

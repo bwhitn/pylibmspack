@@ -18,6 +18,13 @@ def test_list_files():
             "size",
             "dos_date",
             "dos_time",
+            "date_y",
+            "date_m",
+            "date_d",
+            "time_h",
+            "time_m",
+            "time_s",
+            "datetime_utc",
             "attrs",
             "is_readonly",
             "is_hidden",
@@ -65,3 +72,5 @@ def test_from_bytes_and_info():
     assert cab.read("hello.txt") == b"hello\n"
     info = cab.info()
     assert info["files_count"] == 2
+    files = cab.files()
+    assert files[0]["datetime_utc"]

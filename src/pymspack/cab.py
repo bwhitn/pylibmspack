@@ -4,6 +4,7 @@ import os
 import posixpath
 import re
 import tempfile
+from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
 from . import _cab
@@ -81,6 +82,13 @@ class CabFileInfo(TypedDict):
     size: int
     dos_date: int
     dos_time: int
+    date_y: int
+    date_m: int
+    date_d: int
+    time_h: int
+    time_m: int
+    time_s: int
+    datetime_utc: str
     attrs: int
     is_readonly: bool
     is_hidden: bool
@@ -152,6 +160,9 @@ class CabArchive:
         - size (int)
         - dos_date (int)
         - dos_time (int)
+        - date_y/date_m/date_d (int)
+        - time_h/time_m/time_s (int)
+        - datetime_utc (str, ISO 8601)
         - attrs (int)
         - is_readonly/is_hidden/is_system/is_archive (bool)
         - folder_index (int)
@@ -168,6 +179,20 @@ class CabArchive:
         _raise_for_err(err, "listing")
         if files is None:
             return []
+        for entry in files:
+            try:
+                dt = datetime(
+                    int(entry.get("date_y", 0)),
+                    int(entry.get("date_m", 0)),
+                    int(entry.get("date_d", 0)),
+                    int(entry.get("time_h", 0)),
+                    int(entry.get("time_m", 0)),
+                    int(entry.get("time_s", 0)),
+                    tzinfo=timezone.utc,
+                )
+                entry["datetime_utc"] = dt.isoformat()
+            except Exception:
+                entry["datetime_utc"] = ""
         return files
 
     def info(self) -> CabInfo:
@@ -242,6 +267,10 @@ class CabArchive:
         _raise_for_err(err, "extract")
         return out_path
 
+    def extract_raw(self, name: str, dest_dir: str) -> str:
+        """Extract a member using the raw path (no safety checks)."""
+        return self.extract(name, dest_dir, safe=False)
+
     def extract_all(self, dest_dir: str, *, safe: bool = True) -> list[str]:
         """Extract all members to disk and return output paths."""
         paths = []
@@ -251,3 +280,7 @@ class CabArchive:
                 continue
             paths.append(self.extract(name, dest_dir, safe=safe))
         return paths
+
+    def extract_all_raw(self, dest_dir: str) -> list[str]:
+        """Extract all members using raw paths (no safety checks)."""
+        return self.extract_all(dest_dir, safe=False)
