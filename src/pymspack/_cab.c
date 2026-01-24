@@ -1085,39 +1085,30 @@ PyMODINIT_FUNC PyInit__cab(void) {
     PyObject *m = PyModule_Create(&cabmodule);
     if (!m) return NULL;
 #ifdef __APPLE__
-    PyObject *file_obj = PyModule_GetFilenameObject(m);
-    if (!file_obj) {
+    Dl_info info;
+    if (dladdr((void *)PyInit__cab, &info) == 0 || !info.dli_fname) {
+        PyErr_SetString(PyExc_ImportError, "Failed to resolve module path");
         Py_DECREF(m);
         return NULL;
     }
-    PyObject *file_bytes = NULL;
-    if (!PyUnicode_FSConverter(file_obj, &file_bytes)) {
-        Py_DECREF(file_obj);
-        Py_DECREF(m);
-        return NULL;
-    }
-    Py_DECREF(file_obj);
-    const char *file_path = PyBytes_AS_STRING(file_bytes);
+    const char *file_path = info.dli_fname;
     char dylib_path[4096];
     size_t len = strlen(file_path);
     if (len >= sizeof(dylib_path)) {
-        Py_DECREF(file_bytes);
-        Py_DECREF(m);
         PyErr_SetString(PyExc_ImportError, "Module path too long");
+        Py_DECREF(m);
         return NULL;
     }
     strncpy(dylib_path, file_path, sizeof(dylib_path));
-    dylib_path[sizeof(dylib_path) - 1] = '\\0';
+    dylib_path[sizeof(dylib_path) - 1] = '\0';
     char *slash = strrchr(dylib_path, '/');
     if (!slash) {
-        Py_DECREF(file_bytes);
-        Py_DECREF(m);
         PyErr_SetString(PyExc_ImportError, "Failed to resolve module path");
+        Py_DECREF(m);
         return NULL;
     }
-    *slash = '\\0';
+    *slash = '\0';
     strncat(dylib_path, "/.libs/libmspack.dylib", sizeof(dylib_path) - strlen(dylib_path) - 1);
-    Py_DECREF(file_bytes);
     if (ensure_mspack_loaded(dylib_path) != 0) {
         PyErr_SetString(PyExc_ImportError, "Failed to load libmspack.dylib");
         Py_DECREF(m);

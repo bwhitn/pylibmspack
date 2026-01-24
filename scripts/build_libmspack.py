@@ -140,14 +140,13 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
             "Microsoft C compiler (cl.exe) not found. "
             "Install Visual Studio Build Tools and ensure the MSVC environment is set."
         )
-    def_file.write_text(
-        "LIBRARY mspack.dll\r\n"
-        "EXPORTS\r\n"
-        "    mspack_create_cab_decompressor\r\n"
-        "    mspack_destroy_cab_decompressor\r\n",
-        encoding="ascii",
-        newline="",
-    )
+    with def_file.open("wb") as f:
+        f.write(
+            b"LIBRARY mspack.dll\r\n"
+            b"EXPORTS\r\n"
+            b"    mspack_create_cab_decompressor\r\n"
+            b"    mspack_destroy_cab_decompressor\r\n"
+        )
     cmd = [
         "cl",
         "/nologo",
