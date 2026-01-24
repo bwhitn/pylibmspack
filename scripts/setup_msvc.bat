@@ -2,22 +2,9 @@
 setlocal
 
 set "ARCH=%CIBW_ARCH%"
-if "%ARCH%"=="" (
-  set "ARCH=%CIBW_BUILD_ARCH%"
-)
-if "%ARCH%"=="" (
-  if not "%CIBW_BUILD_IDENTIFIER%"=="" (
-    echo %CIBW_BUILD_IDENTIFIER% | findstr /i "win_arm64" >nul
-    if not errorlevel 1 set "ARCH=ARM64"
-    echo %CIBW_BUILD_IDENTIFIER% | findstr /i "win_amd64" >nul
-    if not errorlevel 1 set "ARCH=AMD64"
-  )
-)
-
-if "%ARCH%"=="" (
-  echo CIBW_ARCH is not set and could not be inferred.
-  exit /b 1
-)
+if "%ARCH%"=="" set "ARCH=%CIBW_BUILD_ARCH%"
+if "%ARCH%"=="" set "ARCH=%CIBW_ARCHS%"
+if "%ARCH%"=="" set "ARCH=AMD64"
 
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
