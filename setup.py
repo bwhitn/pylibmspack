@@ -68,6 +68,10 @@ class BuildExt(build_ext):
         pkg_libs = build_lib / "pymspack" / ".libs"
         pkg_libs.mkdir(parents=True, exist_ok=True)
         shutil.copy2(shared_lib, pkg_libs / shared_lib.name)
+        if sys.platform == "darwin":
+            pkg_dylibs = build_lib / "pymspack" / ".dylibs"
+            pkg_dylibs.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(shared_lib, pkg_dylibs / shared_lib.name)
 
 
 ext_modules = [

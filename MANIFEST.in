@@ -1,6 +1,7 @@
 include README.md LICENSE NOTICE pyproject.toml setup.cfg setup.py
 include THIRD_PARTY_LICENSES/LGPL-2.1.txt
 recursive-include src/pymspack *.c *.py
+recursive-include src/pymspack/.dylibs *
 recursive-include src/pymspack/vendor *.tar.xz
 recursive-include scripts *.py
 recursive-include tests *.py
