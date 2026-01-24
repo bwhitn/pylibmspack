@@ -5,3 +5,4 @@ recursive-include src/pymspack/vendor *.tar.xz
 recursive-include scripts *.py
 recursive-include tests *.py
 recursive-include tests/fixtures *.cab
+recursive-include tests/fixtures/expected *.txt

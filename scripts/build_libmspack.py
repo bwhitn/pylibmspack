@@ -83,6 +83,10 @@ def extract(tar_path: Path, dst: Path) -> Path:
 def build_unix(src_root: Path, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     cc = os.environ.get("CC", "cc")
+    cflags = os.environ.get("CFLAGS", "")
+    ldflags = os.environ.get("LDFLAGS", "")
+    cflag_list = cflags.split() if cflags else []
+    ldflag_list = ldflags.split() if ldflags else []
     include_dir = src_root / "mspack"
     sources = [str(src_root / s) for s in SOURCES]
     if sys.platform == "darwin":
@@ -95,7 +99,9 @@ def build_unix(src_root: Path, out_dir: Path) -> Path:
             "-Wl,-install_name,@rpath/libmspack.dylib",
             "-I",
             str(include_dir),
+            *cflag_list,
             *sources,
+            *ldflag_list,
             "-o",
             str(shared),
         ]
@@ -109,7 +115,9 @@ def build_unix(src_root: Path, out_dir: Path) -> Path:
             "-Wl,-soname,libmspack.so",
             "-I",
             str(include_dir),
+            *cflag_list,
             *sources,
+            *ldflag_list,
             "-o",
             str(shared),
         ]

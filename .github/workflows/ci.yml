@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Verify vendored libmspack tarball
         run: >
           python -c "from pathlib import Path; path=Path('src/pymspack/vendor/libmspack_0.10.1.orig.tar.xz');
@@ -30,6 +33,7 @@ jobs:
           CIBW_ARCHS_LINUX: "x86_64 aarch64"
           CIBW_ARCHS_MACOS: "universal2"
           CIBW_ARCHS_WINDOWS: "AMD64"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
           CIBW_TEST_REQUIRES: "pytest"
           CIBW_TEST_COMMAND: "pytest -q {project}/tests"
         run: python -m cibuildwheel --output-dir wheelhouse
