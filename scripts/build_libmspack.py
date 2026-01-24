@@ -88,8 +88,17 @@ def build_unix(src_root: Path, out_dir: Path) -> Path:
     cc = os.environ.get("CC", "cc")
     cflags = os.environ.get("CFLAGS", "")
     ldflags = os.environ.get("LDFLAGS", "")
-    cflag_list = cflags.split() if cflags else []
-    ldflag_list = ldflags.split() if ldflags else []
+    archflags = os.environ.get("ARCHFLAGS", "")
+    cppflags = os.environ.get("CPPFLAGS", "")
+    import shlex
+    cflag_list = []
+    ldflag_list = []
+    for flags in (cflags, archflags, cppflags):
+        if flags:
+            cflag_list += shlex.split(flags)
+    for flags in (ldflags, archflags):
+        if flags:
+            ldflag_list += shlex.split(flags)
     include_dir = src_root / "mspack"
     sources = [str(src_root / s) for s in SOURCES]
     if sys.platform == "darwin":
