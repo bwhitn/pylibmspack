@@ -50,8 +50,7 @@ class BuildExt(build_ext):
             ext.library_dirs.append(info["lib_dir"])
             ext.libraries.append(info["library_name"])
             if not sys.platform.startswith("win"):
-                ext.extra_objects = list(getattr(ext, "extra_objects", []))
-                ext.extra_objects.append(info["shared_lib"])
+                ext.extra_link_args.append(info["shared_lib"])
 
             if sys.platform.startswith("linux"):
                 ext.extra_link_args.append("-Wl,-rpath,$ORIGIN/.libs")

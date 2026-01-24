@@ -8,14 +8,14 @@ version = "0.1.0"
 description = "In-process libmspack bindings for Microsoft CAB files"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES/LGPL-2.1.txt", "NOTICE"]
 authors = [
     {name = "Example Author", email = "dev@example.com"},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
@@ -27,6 +27,13 @@ classifiers = [
     "Programming Language :: C",
     "Topic :: System :: Archiving",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourname/pymspack"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-*"

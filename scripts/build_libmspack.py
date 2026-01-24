@@ -131,11 +131,19 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
     sources = [str(src_root / s) for s in SOURCES]
     shared = out_dir / "mspack.dll"
     implib = out_dir / "mspack.lib"
+    def_file = out_dir / "mspack.def"
     if shutil.which("cl") is None:
         raise RuntimeError(
             "Microsoft C compiler (cl.exe) not found. "
             "Install Visual Studio Build Tools and ensure the MSVC environment is set."
         )
+    def_file.write_text(
+        "LIBRARY mspack\\n"
+        "EXPORTS\\n"
+        "    mspack_create_cab_decompressor\\n"
+        "    mspack_destroy_cab_decompressor\\n",
+        encoding="utf-8",
+    )
     cmd = [
         "cl",
         "/nologo",
@@ -145,9 +153,9 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
         f"/I{include_dir}",
         "/DWIN32",
         "/D_WINDOWS",
-        "/DMSPACK_EXPORTS",
         *sources,
         "/link",
+        f"/DEF:{def_file}",
         f"/IMPLIB:{implib}",
         f"/OUT:{shared}",
     ]
