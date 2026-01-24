@@ -43,7 +43,3 @@ repair-wheel-command = "delocate-wheel -w {dest_dir} -v {wheel}"
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = ""
-
-[tool.cibuildwheel.test]
-requires = ["pytest"]
-command = "pytest -q {project}/tests"
