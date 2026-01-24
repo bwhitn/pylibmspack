@@ -1,0 +1,6 @@
+*.cab -text
+*.tar.xz -text
+*.dylib -text
+*.dll -text
+*.so -text
+/tests/fixtures/expected/*.txt -text

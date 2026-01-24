@@ -1108,9 +1108,29 @@ PyMODINIT_FUNC PyInit__cab(void) {
         return NULL;
     }
     *slash = '\0';
-    strncat(dylib_path, "/.libs/libmspack.dylib", sizeof(dylib_path) - strlen(dylib_path) - 1);
-    if (ensure_mspack_loaded(dylib_path) != 0) {
-        PyErr_SetString(PyExc_ImportError, "Failed to load libmspack.dylib");
+    const char *candidates[] = {
+        "/.libs/libmspack.dylib",
+        "/.dylibs/libmspack.dylib",
+        "/libmspack.dylib",
+    };
+    int loaded = -1;
+    const char *last_err = NULL;
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+        strncpy(dylib_path, file_path, sizeof(dylib_path));
+        dylib_path[sizeof(dylib_path) - 1] = '\0';
+        slash = strrchr(dylib_path, '/');
+        if (!slash) break;
+        *slash = '\0';
+        strncat(dylib_path, candidates[i], sizeof(dylib_path) - strlen(dylib_path) - 1);
+        if (ensure_mspack_loaded(dylib_path) == 0) {
+            loaded = 0;
+            break;
+        }
+        last_err = dlerror();
+    }
+    if (loaded != 0) {
+        if (!last_err) last_err = "unknown error";
+        PyErr_Format(PyExc_ImportError, "Failed to load libmspack.dylib: %s (last path: %s)", last_err, dylib_path);
         Py_DECREF(m);
         return NULL;
     }
