@@ -31,9 +31,6 @@ classifiers = [
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-*"
 skip = "pp* *-musllinux*"
-archs-linux = "x86_64 aarch64"
-archs-macos = "universal2"
-archs-windows = "AMD64"
 
 [tool.cibuildwheel.environment]
 PYMSPACK_LIBMSPACK_VERSION = "0.10.1"
