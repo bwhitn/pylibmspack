@@ -88,11 +88,10 @@ static cabd_create_fn g_cabd_create = NULL;
 static cabd_destroy_fn g_cabd_destroy = NULL;
 static void *g_mspack_handle = NULL;
 
-static int ensure_mspack_loaded(void) {
+static int ensure_mspack_loaded(const char *path) {
     if (g_cabd_create && g_cabd_destroy) {
         return 0;
     }
-    const char *path = "@loader_path/.libs/libmspack.dylib";
     g_mspack_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if (!g_mspack_handle) {
         return -1;
@@ -108,7 +107,7 @@ static int ensure_mspack_loaded(void) {
 
 static struct mscab_decompressor *cabd_create(struct mspack_system *sys) {
 #ifdef __APPLE__
-    if (ensure_mspack_loaded() != 0) return NULL;
+    if (g_cabd_create == NULL || g_cabd_destroy == NULL) return NULL;
     return g_cabd_create(sys);
 #else
     return mspack_create_cab_decompressor(sys);
@@ -1086,7 +1085,40 @@ PyMODINIT_FUNC PyInit__cab(void) {
     PyObject *m = PyModule_Create(&cabmodule);
     if (!m) return NULL;
 #ifdef __APPLE__
-    if (ensure_mspack_loaded() != 0) {
+    PyObject *file_obj = PyModule_GetFilenameObject(m);
+    if (!file_obj) {
+        Py_DECREF(m);
+        return NULL;
+    }
+    PyObject *file_bytes = NULL;
+    if (!PyUnicode_FSConverter(file_obj, &file_bytes)) {
+        Py_DECREF(file_obj);
+        Py_DECREF(m);
+        return NULL;
+    }
+    Py_DECREF(file_obj);
+    const char *file_path = PyBytes_AS_STRING(file_bytes);
+    char dylib_path[4096];
+    size_t len = strlen(file_path);
+    if (len >= sizeof(dylib_path)) {
+        Py_DECREF(file_bytes);
+        Py_DECREF(m);
+        PyErr_SetString(PyExc_ImportError, "Module path too long");
+        return NULL;
+    }
+    strncpy(dylib_path, file_path, sizeof(dylib_path));
+    dylib_path[sizeof(dylib_path) - 1] = '\\0';
+    char *slash = strrchr(dylib_path, '/');
+    if (!slash) {
+        Py_DECREF(file_bytes);
+        Py_DECREF(m);
+        PyErr_SetString(PyExc_ImportError, "Failed to resolve module path");
+        return NULL;
+    }
+    *slash = '\\0';
+    strncat(dylib_path, "/.libs/libmspack.dylib", sizeof(dylib_path) - strlen(dylib_path) - 1);
+    Py_DECREF(file_bytes);
+    if (ensure_mspack_loaded(dylib_path) != 0) {
         PyErr_SetString(PyExc_ImportError, "Failed to load libmspack.dylib");
         Py_DECREF(m);
         return NULL;

@@ -141,11 +141,12 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
             "Install Visual Studio Build Tools and ensure the MSVC environment is set."
         )
     def_file.write_text(
-        "LIBRARY mspack.dll\\n"
-        "EXPORTS\\n"
-        "    mspack_create_cab_decompressor\\n"
-        "    mspack_destroy_cab_decompressor\\n",
-        encoding="utf-8",
+        "LIBRARY mspack.dll\r\n"
+        "EXPORTS\r\n"
+        "    mspack_create_cab_decompressor\r\n"
+        "    mspack_destroy_cab_decompressor\r\n",
+        encoding="ascii",
+        newline="",
     )
     cmd = [
         "cl",
