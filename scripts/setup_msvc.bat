@@ -3,6 +3,9 @@ setlocal
 
 set "ARCH=%CIBW_ARCH%"
 if "%ARCH%"=="" (
+  set "ARCH=%CIBW_BUILD_ARCH%"
+)
+if "%ARCH%"=="" (
   if not "%CIBW_BUILD_IDENTIFIER%"=="" (
     echo %CIBW_BUILD_IDENTIFIER% | findstr /i "win_arm64" >nul
     if not errorlevel 1 set "ARCH=ARM64"
