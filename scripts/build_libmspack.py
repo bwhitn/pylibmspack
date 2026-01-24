@@ -72,7 +72,10 @@ def extract(tar_path: Path, dst: Path) -> Path:
         return dst
     dst.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tar_path, "r:xz") as tf:
-        tf.extractall(dst)
+        try:
+            tf.extractall(dst, filter="data")
+        except TypeError:
+            tf.extractall(dst)
     # Expect a single top-level folder
     entries = [p for p in dst.iterdir() if p.is_dir()]
     if len(entries) != 1:
