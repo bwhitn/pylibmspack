@@ -91,6 +91,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.resolve-tag.outputs.release_tag }}
     steps:
+      - uses: actions/checkout@v4
       - name: Resolve tag
         id: resolve-tag
         shell: bash
