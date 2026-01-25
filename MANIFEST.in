@@ -9,5 +9,6 @@ recursive-include scripts *.py
 recursive-include tests *.py
 recursive-include tests/fixtures *.cab
 recursive-include tests/fixtures *.chm
+recursive-include tests/fixtures *.kwj
 recursive-include tests/fixtures *.tx_
 recursive-include tests/fixtures/expected *.txt

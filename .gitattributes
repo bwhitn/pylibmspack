@@ -1,5 +1,6 @@
 *.cab -text
 *.chm -text
+*.kwj -text
 *.sz_ -text
 *.tx_ -text
 *.tar.xz -text

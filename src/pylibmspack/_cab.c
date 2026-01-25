@@ -84,6 +84,39 @@
 #ifndef MSSZDD_FMT_QBASIC
 #define MSSZDD_FMT_QBASIC 1
 #endif
+#ifndef MSKWAJ_COMP_NONE
+#define MSKWAJ_COMP_NONE 0
+#endif
+#ifndef MSKWAJ_COMP_XOR
+#define MSKWAJ_COMP_XOR 1
+#endif
+#ifndef MSKWAJ_COMP_SZDD
+#define MSKWAJ_COMP_SZDD 2
+#endif
+#ifndef MSKWAJ_COMP_LZH
+#define MSKWAJ_COMP_LZH 3
+#endif
+#ifndef MSKWAJ_COMP_MSZIP
+#define MSKWAJ_COMP_MSZIP 4
+#endif
+#ifndef MSKWAJ_HDR_HASLENGTH
+#define MSKWAJ_HDR_HASLENGTH 0x01
+#endif
+#ifndef MSKWAJ_HDR_HASUNKNOWN1
+#define MSKWAJ_HDR_HASUNKNOWN1 0x02
+#endif
+#ifndef MSKWAJ_HDR_HASUNKNOWN2
+#define MSKWAJ_HDR_HASUNKNOWN2 0x04
+#endif
+#ifndef MSKWAJ_HDR_HASFILENAME
+#define MSKWAJ_HDR_HASFILENAME 0x08
+#endif
+#ifndef MSKWAJ_HDR_HASFILEEXT
+#define MSKWAJ_HDR_HASFILEEXT 0x10
+#endif
+#ifndef MSKWAJ_HDR_HASEXTRATEXT
+#define MSKWAJ_HDR_HASEXTRATEXT 0x20
+#endif
 
 static PyObject *decode_filename(const char *name) {
     if (!name) {
@@ -115,12 +148,16 @@ typedef struct mschm_decompressor *(*chmd_create_fn)(struct mspack_system *sys);
 typedef void (*chmd_destroy_fn)(struct mschm_decompressor *self);
 typedef struct msszdd_decompressor *(*szddd_create_fn)(struct mspack_system *sys);
 typedef void (*szddd_destroy_fn)(struct msszdd_decompressor *self);
+typedef struct mskwaj_decompressor *(*kwajd_create_fn)(struct mspack_system *sys);
+typedef void (*kwajd_destroy_fn)(struct mskwaj_decompressor *self);
 static cabd_create_fn g_cabd_create = NULL;
 static cabd_destroy_fn g_cabd_destroy = NULL;
 static chmd_create_fn g_chmd_create = NULL;
 static chmd_destroy_fn g_chmd_destroy = NULL;
 static szddd_create_fn g_szdd_create = NULL;
 static szddd_destroy_fn g_szdd_destroy = NULL;
+static kwajd_create_fn g_kwaj_create = NULL;
+static kwajd_destroy_fn g_kwaj_destroy = NULL;
 static void *g_mspack_handle = NULL;
 
 static int ensure_mspack_loaded(const char *path) {
@@ -137,8 +174,10 @@ static int ensure_mspack_loaded(const char *path) {
     g_chmd_destroy = (chmd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_chm_decompressor");
     g_szdd_create = (szddd_create_fn)dlsym(g_mspack_handle, "mspack_create_szdd_decompressor");
     g_szdd_destroy = (szddd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_szdd_decompressor");
+    g_kwaj_create = (kwajd_create_fn)dlsym(g_mspack_handle, "mspack_create_kwaj_decompressor");
+    g_kwaj_destroy = (kwajd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_kwaj_decompressor");
     if (!g_cabd_create || !g_cabd_destroy || !g_chmd_create || !g_chmd_destroy ||
-        !g_szdd_create || !g_szdd_destroy) {
+        !g_szdd_create || !g_szdd_destroy || !g_kwaj_create || !g_kwaj_destroy) {
         return -1;
     }
     return 0;
@@ -199,6 +238,25 @@ static void szddd_destroy(struct msszdd_decompressor *szdd) {
     }
 #else
     mspack_destroy_szdd_decompressor(szdd);
+#endif
+}
+
+static struct mskwaj_decompressor *kwajd_create(struct mspack_system *sys) {
+#ifdef __APPLE__
+    if (g_kwaj_create == NULL || g_kwaj_destroy == NULL) return NULL;
+    return g_kwaj_create(sys);
+#else
+    return mspack_create_kwaj_decompressor(sys);
+#endif
+}
+
+static void kwajd_destroy(struct mskwaj_decompressor *kwaj) {
+#ifdef __APPLE__
+    if (g_kwaj_destroy) {
+        g_kwaj_destroy(kwaj);
+    }
+#else
+    mspack_destroy_kwaj_decompressor(kwaj);
 #endif
 }
 
@@ -1750,6 +1808,221 @@ static PyObject *py_szdd_extract_bytes(PyObject *self, PyObject *args) {
     return PyLong_FromLong(err);
 }
 
+static const char *kwaj_comp_name(unsigned short comp_type) {
+    switch (comp_type) {
+        case MSKWAJ_COMP_NONE:
+            return "none";
+        case MSKWAJ_COMP_XOR:
+            return "xor";
+        case MSKWAJ_COMP_SZDD:
+            return "szdd";
+        case MSKWAJ_COMP_LZH:
+            return "lzh";
+        case MSKWAJ_COMP_MSZIP:
+            return "mszip";
+        default:
+            return "unknown";
+    }
+}
+
+static PyObject *build_kwaj_info(struct mskwajd_header *hdr) {
+    PyObject *dict = PyDict_New();
+    if (!dict) return NULL;
+
+    if (dict_set_owned(dict, "comp_type", PyLong_FromUnsignedLong((unsigned long)hdr->comp_type)) < 0) goto error;
+    if (dict_set_owned(dict, "compression", PyUnicode_FromString(kwaj_comp_name(hdr->comp_type))) < 0) goto error;
+    if (dict_set_owned(dict, "data_offset", PyLong_FromLongLong((long long)hdr->data_offset)) < 0) goto error;
+    if (dict_set_owned(dict, "headers", PyLong_FromLong((long)hdr->headers)) < 0) goto error;
+    if (dict_set_owned(dict, "length", PyLong_FromLongLong((long long)hdr->length)) < 0) goto error;
+
+    PyObject *py_filename = decode_filename(hdr->filename);
+    if (!py_filename) {
+        Py_INCREF(Py_None);
+        py_filename = Py_None;
+    }
+    if (dict_set_owned(dict, "filename", py_filename) < 0) goto error;
+
+    if (dict_set_owned(dict, "extra_length", PyLong_FromUnsignedLong((unsigned long)hdr->extra_length)) < 0) goto error;
+    if (hdr->extra && hdr->extra_length > 0) {
+        PyObject *extra = PyBytes_FromStringAndSize(hdr->extra, (Py_ssize_t)hdr->extra_length);
+        if (!extra) goto error;
+        if (dict_set_owned(dict, "extra", extra) < 0) goto error;
+    } else {
+        Py_INCREF(Py_None);
+        if (dict_set_owned(dict, "extra", Py_None) < 0) goto error;
+    }
+
+    int headers = hdr->headers;
+    if (dict_set_owned(dict, "has_length", PyBool_FromLong((headers & MSKWAJ_HDR_HASLENGTH) != 0)) < 0) goto error;
+    if (dict_set_owned(dict, "has_filename", PyBool_FromLong((headers & MSKWAJ_HDR_HASFILENAME) != 0)) < 0) goto error;
+    if (dict_set_owned(dict, "has_fileext", PyBool_FromLong((headers & MSKWAJ_HDR_HASFILEEXT) != 0)) < 0) goto error;
+    if (dict_set_owned(dict, "has_extra", PyBool_FromLong((headers & MSKWAJ_HDR_HASEXTRATEXT) != 0)) < 0) goto error;
+
+    return dict;
+
+error:
+    Py_DECREF(dict);
+    return NULL;
+}
+
+static PyObject *py_kwaj_info(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(NULL);
+    if (!kwaj) {
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mskwajd_header *hdr = kwaj->open(kwaj, path);
+    if (!hdr) {
+        int err = kwaj->last_error(kwaj);
+        kwajd_destroy(kwaj);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = build_kwaj_info(hdr);
+    if (!dict) {
+        kwaj->close(kwaj, hdr);
+        kwajd_destroy(kwaj);
+        return NULL;
+    }
+    kwaj->close(kwaj, hdr);
+    kwajd_destroy(kwaj);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+}
+
+static PyObject *py_kwaj_info_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    if (!PyArg_ParseTuple(args, "y*", &buf)) return NULL;
+
+    const char *mem_name = "pylibmspack:memkwaj";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(&sys.sys);
+    if (!kwaj) {
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mskwajd_header *hdr = kwaj->open(kwaj, mem_name);
+    if (!hdr) {
+        int err = kwaj->last_error(kwaj);
+        kwajd_destroy(kwaj);
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = build_kwaj_info(hdr);
+    if (!dict) {
+        kwaj->close(kwaj, hdr);
+        kwajd_destroy(kwaj);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+    kwaj->close(kwaj, hdr);
+    kwajd_destroy(kwaj);
+    PyBuffer_Release(&buf);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+}
+
+static PyObject *py_kwaj_extract(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    const char *out_path = NULL;
+    if (!PyArg_ParseTuple(args, "ss", &path, &out_path)) return NULL;
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(NULL);
+    if (!kwaj) {
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct mskwajd_header *hdr = kwaj->open(kwaj, path);
+    if (!hdr) {
+        int err = kwaj->last_error(kwaj);
+        kwajd_destroy(kwaj);
+        return PyLong_FromLong(err);
+    }
+
+    int err = kwaj->extract(kwaj, hdr, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = kwaj->last_error(kwaj);
+    }
+    kwaj->close(kwaj, hdr);
+    kwajd_destroy(kwaj);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_kwaj_extract_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    PyObject *out_obj = NULL;
+    PyObject *out_bytes = NULL;
+    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) return NULL;
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+    const char *mem_name = "pylibmspack:memkwaj";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(&sys.sys);
+    if (!kwaj) {
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct mskwajd_header *hdr = kwaj->open(kwaj, mem_name);
+    if (!hdr) {
+        int err = kwaj->last_error(kwaj);
+        kwajd_destroy(kwaj);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(err);
+    }
+
+    int err = kwaj->extract(kwaj, hdr, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = kwaj->last_error(kwaj);
+    }
+    kwaj->close(kwaj, hdr);
+    kwajd_destroy(kwaj);
+    Py_DECREF(out_bytes);
+    PyBuffer_Release(&buf);
+    return PyLong_FromLong(err);
+}
+
 static PyMethodDef CabMethods[] = {
     {"list_files", py_cab_list, METH_VARARGS, "List files in a CAB"},
     {"list_files_bytes", py_cab_list_bytes, METH_VARARGS, "List files in a CAB from bytes"},
@@ -1767,6 +2040,10 @@ static PyMethodDef CabMethods[] = {
     {"szdd_info_bytes", py_szdd_info_bytes, METH_VARARGS, "Read SZDD header info from bytes"},
     {"szdd_extract", py_szdd_extract, METH_VARARGS, "Extract SZDD data"},
     {"szdd_extract_bytes", py_szdd_extract_bytes, METH_VARARGS, "Extract SZDD data from bytes"},
+    {"kwaj_info", py_kwaj_info, METH_VARARGS, "Read KWAJ header info"},
+    {"kwaj_info_bytes", py_kwaj_info_bytes, METH_VARARGS, "Read KWAJ header info from bytes"},
+    {"kwaj_extract", py_kwaj_extract, METH_VARARGS, "Extract KWAJ data"},
+    {"kwaj_extract_bytes", py_kwaj_extract_bytes, METH_VARARGS, "Extract KWAJ data from bytes"},
     {NULL, NULL, 0, NULL},
 };
 

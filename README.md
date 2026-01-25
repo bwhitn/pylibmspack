@@ -1,6 +1,6 @@
 # pylibmspack
 
-`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, and SZDD files. It is a CPython extension (no subprocess calls).
+`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, SZDD, and KWAJ files. It is a CPython extension (no subprocess calls).
 
 ## Install
 
@@ -97,6 +97,27 @@ from pylibmspack import SzddFile
 data = open("readme.tx_", "rb").read()
 szdd = SzddFile.from_bytes(data, name="readme.tx_")
 print(szdd.info())
+```
+
+### KWAJ extraction
+
+```python
+from pylibmspack import KwajFile
+
+kwj = KwajFile("setup.kwj")
+print(kwj.info())
+data = kwj.read()
+kwj.extract("./out")
+```
+
+### KWAJ from bytes
+
+```python
+from pylibmspack import KwajFile
+
+data = open("setup.kwj", "rb").read()
+kwj = KwajFile.from_bytes(data, name="setup.kwj")
+print(kwj.info())
 ```
 
 ### Multi-cabinet sets
@@ -279,6 +300,40 @@ Decompress using raw (unsafe) path handling.
 ### SzddFile.from_bytes(data: bytes, *, name: str = "memory.sz_") -> SzddFile
 
 Create a SZDD reader backed by in-memory bytes.
+
+### KwajFile(path: str)
+
+Open a KWAJ-compressed file on disk.
+
+### KwajFile.info() -> KwajInfo
+
+Return parsed KWAJ header metadata. The `KwajInfo` dict includes:
+
+- `comp_type` (int)
+- `compression` (str: `none`, `xor`, `szdd`, `lzh`, `mszip`, `unknown`)
+- `data_offset` (int)
+- `headers` (int)
+- `length` (int)
+- `filename` (str | None)
+- `extra_length` (int)
+- `extra` (bytes | None)
+- `has_length` / `has_filename` / `has_fileext` / `has_extra` (bool)
+
+### KwajFile.read(*, max_size: int = 256*1024*1024) -> bytes
+
+Decompress and return the file contents.
+
+### KwajFile.extract(dest_dir: str, *, safe: bool = True, out_name: str | None = None) -> str
+
+Decompress to disk and return the output path.
+
+### KwajFile.extract_raw(dest_dir: str, *, out_name: str | None = None) -> str
+
+Decompress using raw (unsafe) path handling.
+
+### KwajFile.from_bytes(data: bytes, *, name: str = "memory.kwj") -> KwajFile
+
+Create a KWAJ reader backed by in-memory bytes.
 ### Exceptions
 
 All errors derive from `MspackError`:
@@ -290,6 +345,7 @@ All errors derive from `MspackError`:
 - `CabError` / `CabFormatError` / `CabDecompressionError` / `CabPathTraversalError`
 - `ChmError` / `ChmFormatError` / `ChmDecompressionError` / `ChmPathTraversalError`
 - `SzddError` / `SzddFormatError` / `SzddDecompressionError` / `SzddPathTraversalError`
+- `KwajError` / `KwajFormatError` / `KwajDecompressionError` / `KwajPathTraversalError`
 
 ## Safe extraction
 

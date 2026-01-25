@@ -16,9 +16,11 @@ def main():
     with tarfile.open(VENDORED, "r:xz") as tf:
         mszip = tf.getmember("libmspack-0.10.1alpha/test/test_files/cabd/mszip_lzx_qtm.cab")
         normal = tf.getmember("libmspack-0.10.1alpha/test/test_files/cabd/normal_2files_1folder.cab")
+        kwaj = tf.getmember("libmspack-0.10.1alpha/test/test_files/kwajd/f00.kwj")
         (FIXTURES_DIR / "small_mszip.cab").write_bytes(tf.extractfile(mszip).read())
         normal_bytes = tf.extractfile(normal).read()
         (FIXTURES_DIR / "normal_2files_1folder.cab").write_bytes(normal_bytes)
+        (FIXTURES_DIR / "sample.kwj").write_bytes(tf.extractfile(kwaj).read())
 
     # Build traversal.cab by rewriting a filename in normal_2files_1folder.cab
     needle = b"hello.c\\x00"

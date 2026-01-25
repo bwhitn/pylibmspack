@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import _libmspack as _libmspack  # noqa: F401
 from .cab import CabArchive, CabFileInfo, CabInfo
 from .chm import ChmArchive, ChmFileInfo, ChmInfo
+from .kwaj import KwajFile, KwajInfo
 from .errors import (
     CabDecompressionError,
     CabError,
@@ -14,6 +15,10 @@ from .errors import (
     ChmError,
     ChmFormatError,
     ChmPathTraversalError,
+    KwajDecompressionError,
+    KwajError,
+    KwajFormatError,
+    KwajPathTraversalError,
     MspackDecompressionError,
     MspackError,
     MspackFormatError,
@@ -34,6 +39,8 @@ __all__ = [
     "ChmInfo",
     "SzddFile",
     "SzddInfo",
+    "KwajFile",
+    "KwajInfo",
     "MspackError",
     "MspackFormatError",
     "MspackDecompressionError",
@@ -50,6 +57,10 @@ __all__ = [
     "SzddFormatError",
     "SzddDecompressionError",
     "SzddPathTraversalError",
+    "KwajError",
+    "KwajFormatError",
+    "KwajDecompressionError",
+    "KwajPathTraversalError",
 ]
 
 __version__ = "0.1.0"

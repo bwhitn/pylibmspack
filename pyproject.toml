@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pylibmspack"
 version = "0.1.0"
-description = "In-process libmspack bindings for Microsoft CAB, CHM, and SZDD files"
+description = "In-process libmspack bindings for Microsoft CAB, CHM, SZDD, and KWAJ files"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"

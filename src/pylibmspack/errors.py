@@ -60,3 +60,19 @@ class SzddDecompressionError(SzddError, MspackDecompressionError):
 
 class SzddPathTraversalError(SzddError, MspackPathTraversalError):
     """Unsafe path detected during extraction."""
+
+
+class KwajError(MspackError):
+    """Base error for KWAJ handling."""
+
+
+class KwajFormatError(KwajError, MspackFormatError):
+    """KWAJ file is corrupt, truncated, or uses unsupported features."""
+
+
+class KwajDecompressionError(KwajError, MspackDecompressionError):
+    """KWAJ file could not be decompressed."""
+
+
+class KwajPathTraversalError(KwajError, MspackPathTraversalError):
+    """Unsafe path detected during extraction."""
