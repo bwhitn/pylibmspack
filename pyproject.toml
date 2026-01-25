@@ -5,11 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pylibmspack"
 version = "0.1.0"
-description = "In-process libmspack bindings for Microsoft CAB files"
+description = "In-process libmspack bindings for Microsoft CAB, CHM, and SZDD files"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
-license-files = ["LICENSE", "THIRD_PARTY_LICENSES/LGPL-2.1.txt", "NOTICE"]
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY_LICENSES/LGPL-2.1.txt",
+    "THIRD_PARTY_LICENSES/NSIS_ZLIB_LICENSE.txt",
+    "NOTICE",
+]
 authors = [
     {name = "Example Author", email = "dev@example.com"},
 ]

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pylibmspack import CabArchive, CabPathTraversalError
+from pylibmspack import CabArchive, CabFormatError, CabPathTraversalError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
@@ -81,3 +81,9 @@ def test_from_bytes_and_info():
     assert info["files_count"] == 3
     files = cab.files()
     assert files[0]["datetime_utc"]
+
+
+def test_cab_invalid_bytes():
+    cab = CabArchive.from_bytes(b"not a cab")
+    with pytest.raises(CabFormatError):
+        cab.info()

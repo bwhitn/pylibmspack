@@ -1,17 +1,62 @@
-class CabError(Exception):
-    """Base error for CAB handling.
-
-    All pylibmspack exceptions derive from this type.
-    """
+class MspackError(Exception):
+    """Base error for libmspack handling."""
 
 
-class CabFormatError(CabError):
+class MspackFormatError(MspackError):
+    """File is corrupt, truncated, or uses unsupported features."""
+
+
+class MspackDecompressionError(MspackError):
+    """File could not be decompressed."""
+
+
+class MspackPathTraversalError(MspackError):
+    """Unsafe path detected during extraction."""
+
+
+class CabError(MspackError):
+    """Base error for CAB handling."""
+
+
+class CabFormatError(CabError, MspackFormatError):
     """CAB file is corrupt, truncated, or uses unsupported features."""
 
 
-class CabDecompressionError(CabError):
+class CabDecompressionError(CabError, MspackDecompressionError):
     """CAB file could not be decompressed."""
 
 
-class CabPathTraversalError(CabError):
+class CabPathTraversalError(CabError, MspackPathTraversalError):
+    """Unsafe path detected during extraction."""
+
+
+class ChmError(MspackError):
+    """Base error for CHM handling."""
+
+
+class ChmFormatError(ChmError, MspackFormatError):
+    """CHM file is corrupt, truncated, or uses unsupported features."""
+
+
+class ChmDecompressionError(ChmError, MspackDecompressionError):
+    """CHM file could not be decompressed."""
+
+
+class ChmPathTraversalError(ChmError, MspackPathTraversalError):
+    """Unsafe path detected during extraction."""
+
+
+class SzddError(MspackError):
+    """Base error for SZDD handling."""
+
+
+class SzddFormatError(SzddError, MspackFormatError):
+    """SZDD file is corrupt, truncated, or uses unsupported features."""
+
+
+class SzddDecompressionError(SzddError, MspackDecompressionError):
+    """SZDD file could not be decompressed."""
+
+
+class SzddPathTraversalError(SzddError, MspackPathTraversalError):
     """Unsafe path detected during extraction."""

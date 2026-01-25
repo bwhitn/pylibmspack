@@ -1,3 +1,6 @@
 pylibmspack bundles libmspack under the LGPL-2.1 license.
 The corresponding libmspack source tarball is included under pylibmspack/vendor/.
 Users may replace the bundled shared library inside pylibmspack/.libs with a compatible build.
+
+If present, the test fixture tests/fixtures/sample.chm is from NSIS
+documentation and is licensed under the zlib/libpng license.

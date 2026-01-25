@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import os
-import posixpath
-import re
 import tempfile
 from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
 from . import _cab
+from ._paths import ensure_parent, safe_join, unsafe_join
 from .errors import (
     CabDecompressionError,
     CabError,
@@ -20,59 +19,33 @@ _ERR_OK = getattr(_cab, "MSPACK_ERR_OK", 0)
 _ERR_DATAFORMAT = getattr(_cab, "MSPACK_ERR_DATAFORMAT", -1)
 _ERR_DECRUNCH = getattr(_cab, "MSPACK_ERR_DECRUNCH", -1)
 _ERR_BADCOMP = getattr(_cab, "MSPACK_ERR_BADCOMP", -1)
+_ERR_SIGNATURE = getattr(_cab, "MSPACK_ERR_SIGNATURE", -1)
+_ERR_CHECKSUM = getattr(_cab, "MSPACK_ERR_CHECKSUM", -1)
 
 
 def _raise_for_err(err: int, context: str) -> None:
     if err == _ERR_OK:
         return
-    if err in {_ERR_DATAFORMAT, _ERR_BADCOMP}:
+    if err in {_ERR_DATAFORMAT, _ERR_BADCOMP, _ERR_SIGNATURE, _ERR_CHECKSUM}:
         raise CabFormatError(f"{context} failed: libmspack error {err}")
     if err == _ERR_DECRUNCH:
         raise CabDecompressionError(f"{context} failed: libmspack error {err}")
     raise CabError(f"{context} failed: libmspack error {err}")
 
 
-_DRIVE_RE = re.compile(r"^[A-Za-z]:")
-
-
-def _normalize_member_path(name: str) -> str:
-    if "\x00" in name:
-        raise CabPathTraversalError("NUL byte in member name")
-    raw = name.replace("\\", "/")
-    if _DRIVE_RE.match(raw):
-        raise CabPathTraversalError("Drive-letter paths are not allowed")
-    if raw.startswith("//"):
-        raise CabPathTraversalError("UNC paths are not allowed")
-    if raw.startswith("/"):
-        raise CabPathTraversalError("Absolute paths are not allowed")
-    norm = posixpath.normpath(raw)
-    if norm in {".", ""}:
-        raise CabPathTraversalError("Empty member path")
-    if norm.startswith("../") or norm == "..":
-        raise CabPathTraversalError("Path traversal is not allowed")
-    if norm.startswith("/"):
-        raise CabPathTraversalError("Absolute paths are not allowed")
-    return norm
-
-
 def _safe_join(dest_dir: str, name: str) -> str:
-    norm = _normalize_member_path(name)
-    dest_dir_abs = os.path.abspath(dest_dir)
-    target = os.path.abspath(os.path.join(dest_dir_abs, *norm.split("/")))
-    if os.path.commonpath([dest_dir_abs, target]) != dest_dir_abs:
-        raise CabPathTraversalError("Path traversal is not allowed")
-    return target
+    try:
+        return safe_join(dest_dir, name)
+    except ValueError as exc:
+        raise CabPathTraversalError(str(exc)) from exc
 
 
 def _unsafe_join(dest_dir: str, name: str) -> str:
-    parts = name.replace("\\", "/").split("/")
-    return os.path.join(dest_dir, *parts)
+    return unsafe_join(dest_dir, name)
 
 
 def _ensure_parent(path: str) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    ensure_parent(path)
 
 
 class CabFileInfo(TypedDict):

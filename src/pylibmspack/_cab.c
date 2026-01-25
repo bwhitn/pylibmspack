@@ -45,17 +45,44 @@
 #ifndef MSPACK_ERR_ARGS
 #define MSPACK_ERR_ARGS 1
 #endif
-#ifndef MSPACK_ERR_DATAFORMAT
-#define MSPACK_ERR_DATAFORMAT 2
+#ifndef MSPACK_ERR_OPEN
+#define MSPACK_ERR_OPEN 2
 #endif
-#ifndef MSPACK_ERR_DECRUNCH
-#define MSPACK_ERR_DECRUNCH 3
+#ifndef MSPACK_ERR_READ
+#define MSPACK_ERR_READ 3
 #endif
-#ifndef MSPACK_ERR_BADCOMP
-#define MSPACK_ERR_BADCOMP 4
+#ifndef MSPACK_ERR_WRITE
+#define MSPACK_ERR_WRITE 4
+#endif
+#ifndef MSPACK_ERR_SEEK
+#define MSPACK_ERR_SEEK 5
 #endif
 #ifndef MSPACK_ERR_NOMEMORY
-#define MSPACK_ERR_NOMEMORY 5
+#define MSPACK_ERR_NOMEMORY 6
+#endif
+#ifndef MSPACK_ERR_SIGNATURE
+#define MSPACK_ERR_SIGNATURE 7
+#endif
+#ifndef MSPACK_ERR_DATAFORMAT
+#define MSPACK_ERR_DATAFORMAT 8
+#endif
+#ifndef MSPACK_ERR_CHECKSUM
+#define MSPACK_ERR_CHECKSUM 9
+#endif
+#ifndef MSPACK_ERR_CRUNCH
+#define MSPACK_ERR_CRUNCH 10
+#endif
+#ifndef MSPACK_ERR_DECRUNCH
+#define MSPACK_ERR_DECRUNCH 11
+#endif
+#ifndef MSPACK_ERR_BADCOMP
+#define MSPACK_ERR_BADCOMP 12
+#endif
+#ifndef MSSZDD_FMT_NORMAL
+#define MSSZDD_FMT_NORMAL 0
+#endif
+#ifndef MSSZDD_FMT_QBASIC
+#define MSSZDD_FMT_QBASIC 1
 #endif
 
 static PyObject *decode_filename(const char *name) {
@@ -84,8 +111,16 @@ struct mscab_decompressor;
 #ifdef __APPLE__
 typedef struct mscab_decompressor *(*cabd_create_fn)(struct mspack_system *sys);
 typedef void (*cabd_destroy_fn)(struct mscab_decompressor *self);
+typedef struct mschm_decompressor *(*chmd_create_fn)(struct mspack_system *sys);
+typedef void (*chmd_destroy_fn)(struct mschm_decompressor *self);
+typedef struct msszdd_decompressor *(*szddd_create_fn)(struct mspack_system *sys);
+typedef void (*szddd_destroy_fn)(struct msszdd_decompressor *self);
 static cabd_create_fn g_cabd_create = NULL;
 static cabd_destroy_fn g_cabd_destroy = NULL;
+static chmd_create_fn g_chmd_create = NULL;
+static chmd_destroy_fn g_chmd_destroy = NULL;
+static szddd_create_fn g_szdd_create = NULL;
+static szddd_destroy_fn g_szdd_destroy = NULL;
 static void *g_mspack_handle = NULL;
 
 static int ensure_mspack_loaded(const char *path) {
@@ -98,7 +133,12 @@ static int ensure_mspack_loaded(const char *path) {
     }
     g_cabd_create = (cabd_create_fn)dlsym(g_mspack_handle, "mspack_create_cab_decompressor");
     g_cabd_destroy = (cabd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_cab_decompressor");
-    if (!g_cabd_create || !g_cabd_destroy) {
+    g_chmd_create = (chmd_create_fn)dlsym(g_mspack_handle, "mspack_create_chm_decompressor");
+    g_chmd_destroy = (chmd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_chm_decompressor");
+    g_szdd_create = (szddd_create_fn)dlsym(g_mspack_handle, "mspack_create_szdd_decompressor");
+    g_szdd_destroy = (szddd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_szdd_decompressor");
+    if (!g_cabd_create || !g_cabd_destroy || !g_chmd_create || !g_chmd_destroy ||
+        !g_szdd_create || !g_szdd_destroy) {
         return -1;
     }
     return 0;
@@ -121,6 +161,44 @@ static void cabd_destroy(struct mscab_decompressor *cabd) {
     }
 #else
     mspack_destroy_cab_decompressor(cabd);
+#endif
+}
+
+static struct mschm_decompressor *chmd_create(struct mspack_system *sys) {
+#ifdef __APPLE__
+    if (g_chmd_create == NULL || g_chmd_destroy == NULL) return NULL;
+    return g_chmd_create(sys);
+#else
+    return mspack_create_chm_decompressor(sys);
+#endif
+}
+
+static void chmd_destroy(struct mschm_decompressor *chmd) {
+#ifdef __APPLE__
+    if (g_chmd_destroy) {
+        g_chmd_destroy(chmd);
+    }
+#else
+    mspack_destroy_chm_decompressor(chmd);
+#endif
+}
+
+static struct msszdd_decompressor *szddd_create(struct mspack_system *sys) {
+#ifdef __APPLE__
+    if (g_szdd_create == NULL || g_szdd_destroy == NULL) return NULL;
+    return g_szdd_create(sys);
+#else
+    return mspack_create_szdd_decompressor(sys);
+#endif
+}
+
+static void szddd_destroy(struct msszdd_decompressor *szdd) {
+#ifdef __APPLE__
+    if (g_szdd_destroy) {
+        g_szdd_destroy(szdd);
+    }
+#else
+    mspack_destroy_szdd_decompressor(szdd);
 #endif
 }
 
@@ -1063,6 +1141,615 @@ static PyObject *py_cab_info_bytes(PyObject *self, PyObject *args) {
     return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
 }
 
+static const char *chm_section_name(unsigned int id) {
+    switch (id) {
+        case 0:
+            return "uncompressed";
+        case 1:
+            return "mscompressed";
+        default:
+            return "unknown";
+    }
+}
+
+static PyObject *build_chm_file_dict(struct mschmd_file *file, int is_system) {
+    PyObject *dict = PyDict_New();
+    if (!dict) return NULL;
+
+    PyObject *py_name = decode_filename(file->filename);
+    if (!py_name) {
+        Py_INCREF(Py_None);
+        py_name = Py_None;
+    }
+    if (dict_set_owned(dict, "name", py_name) < 0) goto error;
+    if (dict_set_owned(dict, "size", PyLong_FromLongLong((long long)file->length)) < 0) goto error;
+    if (dict_set_owned(dict, "offset", PyLong_FromLongLong((long long)file->offset)) < 0) goto error;
+
+    long section_id = file->section ? (long)file->section->id : -1;
+    if (dict_set_owned(dict, "section_id", PyLong_FromLong(section_id)) < 0) goto error;
+    if (dict_set_owned(dict, "section", PyUnicode_FromString(chm_section_name((unsigned int)section_id))) < 0) goto error;
+    if (dict_set_owned(dict, "is_system", PyBool_FromLong(is_system)) < 0) goto error;
+    return dict;
+
+error:
+    Py_DECREF(dict);
+    return NULL;
+}
+
+static int append_chm_files(PyObject *list, struct mschmd_file *file, int is_system) {
+    while (file) {
+        PyObject *entry = build_chm_file_dict(file, is_system);
+        if (!entry) return -1;
+        if (PyList_Append(list, entry) < 0) {
+            Py_DECREF(entry);
+            return -1;
+        }
+        Py_DECREF(entry);
+        file = file->next;
+    }
+    return 0;
+}
+
+static int count_chm_files(struct mschmd_file *file) {
+    int count = 0;
+    while (file) {
+        count++;
+        file = file->next;
+    }
+    return count;
+}
+
+static PyObject *build_chm_info(struct mschmd_header *chm, const char *path) {
+    PyObject *dict = PyDict_New();
+    if (!dict) return NULL;
+
+    PyObject *py_filename = decode_filename(chm->filename);
+    if (path && chm->filename && strcmp(chm->filename, path) == 0) {
+        Py_XDECREF(py_filename);
+        Py_INCREF(Py_None);
+        py_filename = Py_None;
+    } else if (!py_filename) {
+        Py_INCREF(Py_None);
+        py_filename = Py_None;
+    }
+    if (dict_set_owned(dict, "filename", py_filename) < 0) goto error;
+
+    if (dict_set_owned(dict, "length", PyLong_FromLongLong((long long)chm->length)) < 0) goto error;
+    if (dict_set_owned(dict, "version", PyLong_FromUnsignedLong((unsigned long)chm->version)) < 0) goto error;
+    if (dict_set_owned(dict, "timestamp", PyLong_FromUnsignedLong((unsigned long)chm->timestamp)) < 0) goto error;
+    if (dict_set_owned(dict, "language", PyLong_FromUnsignedLong((unsigned long)chm->language)) < 0) goto error;
+
+    if (dict_set_owned(dict, "dir_offset", PyLong_FromLongLong((long long)chm->dir_offset)) < 0) goto error;
+    if (dict_set_owned(dict, "num_chunks", PyLong_FromUnsignedLong((unsigned long)chm->num_chunks)) < 0) goto error;
+    if (dict_set_owned(dict, "chunk_size", PyLong_FromUnsignedLong((unsigned long)chm->chunk_size)) < 0) goto error;
+    if (dict_set_owned(dict, "density", PyLong_FromUnsignedLong((unsigned long)chm->density)) < 0) goto error;
+    if (dict_set_owned(dict, "depth", PyLong_FromUnsignedLong((unsigned long)chm->depth)) < 0) goto error;
+    if (dict_set_owned(dict, "index_root", PyLong_FromUnsignedLong((unsigned long)chm->index_root)) < 0) goto error;
+    if (dict_set_owned(dict, "first_pmgl", PyLong_FromUnsignedLong((unsigned long)chm->first_pmgl)) < 0) goto error;
+    if (dict_set_owned(dict, "last_pmgl", PyLong_FromUnsignedLong((unsigned long)chm->last_pmgl)) < 0) goto error;
+
+    if (dict_set_owned(dict, "files_count", PyLong_FromLong((long)count_chm_files(chm->files))) < 0) goto error;
+    if (dict_set_owned(dict, "sysfiles_count", PyLong_FromLong((long)count_chm_files(chm->sysfiles))) < 0) goto error;
+
+    return dict;
+
+error:
+    Py_DECREF(dict);
+    return NULL;
+}
+
+static PyObject *py_chm_list(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(NULL);
+    if (!chmd) {
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, path);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *list = PyList_New(0);
+    if (!list) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        return NULL;
+    }
+    if (append_chm_files(list, chm->files, 0) < 0 || append_chm_files(list, chm->sysfiles, 1) < 0) {
+        Py_DECREF(list);
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        return NULL;
+    }
+
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    return Py_BuildValue("Oi", list, MSPACK_ERR_OK);
+}
+
+static PyObject *py_chm_list_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    if (!PyArg_ParseTuple(args, "y*", &buf)) {
+        return NULL;
+    }
+
+    const char *mem_name = "pylibmspack:memchm";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
+    if (!chmd) {
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, mem_name);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *list = PyList_New(0);
+    if (!list) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+    if (append_chm_files(list, chm->files, 0) < 0 || append_chm_files(list, chm->sysfiles, 1) < 0) {
+        Py_DECREF(list);
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    PyBuffer_Release(&buf);
+    return Py_BuildValue("Oi", list, MSPACK_ERR_OK);
+}
+
+static PyObject *py_chm_info(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(NULL);
+    if (!chmd) {
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, path);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = build_chm_info(chm, path);
+    if (!dict) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        return NULL;
+    }
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+}
+
+static PyObject *py_chm_info_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    if (!PyArg_ParseTuple(args, "y*", &buf)) {
+        return NULL;
+    }
+
+    const char *mem_name = "pylibmspack:memchm";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
+    if (!chmd) {
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, mem_name);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = build_chm_info(chm, mem_name);
+    if (!dict) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    PyBuffer_Release(&buf);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+}
+
+static const char *skip_chm_slash(const char *name) {
+    while (name && name[0] == '/') name++;
+    return name;
+}
+
+static int chm_name_matches(const char *file_name, const char *query) {
+    if (!file_name || !query) return 0;
+    if (strcmp(file_name, query) == 0) return 1;
+    const char *a = skip_chm_slash(file_name);
+    const char *b = skip_chm_slash(query);
+    return strcmp(a, b) == 0;
+}
+
+static struct mschmd_file *find_chm_file(struct mschmd_header *chm, const char *name) {
+    struct mschmd_file *file = chm->files;
+    while (file) {
+        if (chm_name_matches(file->filename, name)) {
+            return file;
+        }
+        file = file->next;
+    }
+    file = chm->sysfiles;
+    while (file) {
+        if (chm_name_matches(file->filename, name)) {
+            return file;
+        }
+        file = file->next;
+    }
+    return NULL;
+}
+
+static PyObject *py_chm_extract(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    const char *name = NULL;
+    const char *out_path = NULL;
+    if (!PyArg_ParseTuple(args, "sss", &path, &name, &out_path)) return NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(NULL);
+    if (!chmd) {
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, path);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        return PyLong_FromLong(err);
+    }
+
+    struct mschmd_file *file = find_chm_file(chm, name);
+    if (!file) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        return PyLong_FromLong(MSPACK_ERR_ARGS);
+    }
+
+    int err = chmd->extract(chmd, file, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = chmd->last_error(chmd);
+    }
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_chm_extract_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    PyObject *name_obj = NULL;
+    PyObject *out_obj = NULL;
+    PyObject *name_bytes = NULL;
+    PyObject *out_bytes = NULL;
+
+    if (!PyArg_ParseTuple(args, "y*OO", &buf, &name_obj, &out_obj)) {
+        return NULL;
+    }
+    name_bytes = PyUnicode_AsEncodedString(name_obj, "utf-8", "surrogateescape");
+    if (!name_bytes) {
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        Py_DECREF(name_bytes);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    const char *name = PyBytes_AS_STRING(name_bytes);
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+
+    const char *mem_name = "pylibmspack:memchm";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
+    if (!chmd) {
+        Py_DECREF(name_bytes);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct mschmd_header *chm = chmd->open(chmd, mem_name);
+    if (!chm) {
+        int err = chmd->last_error(chmd);
+        chmd_destroy(chmd);
+        Py_DECREF(name_bytes);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(err);
+    }
+
+    struct mschmd_file *file = find_chm_file(chm, name);
+    if (!file) {
+        chmd->close(chmd, chm);
+        chmd_destroy(chmd);
+        Py_DECREF(name_bytes);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_ARGS);
+    }
+
+    int err = chmd->extract(chmd, file, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = chmd->last_error(chmd);
+    }
+    chmd->close(chmd, chm);
+    chmd_destroy(chmd);
+    Py_DECREF(name_bytes);
+    Py_DECREF(out_bytes);
+    PyBuffer_Release(&buf);
+    return PyLong_FromLong(err);
+}
+
+static const char *szdd_format_name(int fmt) {
+    switch (fmt) {
+        case MSSZDD_FMT_NORMAL:
+            return "normal";
+        case MSSZDD_FMT_QBASIC:
+            return "qbasic";
+        default:
+            return "unknown";
+    }
+}
+
+static PyObject *py_szdd_info(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
+
+    struct msszdd_decompressor *szdd = szddd_create(NULL);
+    if (!szdd) {
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct msszddd_header *hdr = szdd->open(szdd, path);
+    if (!hdr) {
+        int err = szdd->last_error(szdd);
+        szddd_destroy(szdd);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = PyDict_New();
+    if (!dict) {
+        szdd->close(szdd, hdr);
+        szddd_destroy(szdd);
+        return NULL;
+    }
+    if (dict_set_owned(dict, "format_id", PyLong_FromLong((long)hdr->format)) < 0) goto error;
+    if (dict_set_owned(dict, "format", PyUnicode_FromString(szdd_format_name(hdr->format))) < 0) goto error;
+    if (dict_set_owned(dict, "length", PyLong_FromLongLong((long long)hdr->length)) < 0) goto error;
+    if (dict_set_owned(dict, "missing_char", PyLong_FromLong((long)(unsigned char)hdr->missing_char)) < 0) goto error;
+
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+
+error:
+    Py_DECREF(dict);
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    return NULL;
+}
+
+static PyObject *py_szdd_info_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    if (!PyArg_ParseTuple(args, "y*", &buf)) return NULL;
+
+    const char *mem_name = "pylibmspack:memszdd";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct msszdd_decompressor *szdd = szddd_create(&sys.sys);
+    if (!szdd) {
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
+    }
+    struct msszddd_header *hdr = szdd->open(szdd, mem_name);
+    if (!hdr) {
+        int err = szdd->last_error(szdd);
+        szddd_destroy(szdd);
+        PyBuffer_Release(&buf);
+        Py_INCREF(Py_None);
+        return Py_BuildValue("Oi", Py_None, err);
+    }
+
+    PyObject *dict = PyDict_New();
+    if (!dict) {
+        szdd->close(szdd, hdr);
+        szddd_destroy(szdd);
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+    if (dict_set_owned(dict, "format_id", PyLong_FromLong((long)hdr->format)) < 0) goto error;
+    if (dict_set_owned(dict, "format", PyUnicode_FromString(szdd_format_name(hdr->format))) < 0) goto error;
+    if (dict_set_owned(dict, "length", PyLong_FromLongLong((long long)hdr->length)) < 0) goto error;
+    if (dict_set_owned(dict, "missing_char", PyLong_FromLong((long)(unsigned char)hdr->missing_char)) < 0) goto error;
+
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    PyBuffer_Release(&buf);
+    return Py_BuildValue("Oi", dict, MSPACK_ERR_OK);
+
+error:
+    Py_DECREF(dict);
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    PyBuffer_Release(&buf);
+    return NULL;
+}
+
+static PyObject *py_szdd_extract(PyObject *self, PyObject *args) {
+    const char *path = NULL;
+    const char *out_path = NULL;
+    if (!PyArg_ParseTuple(args, "ss", &path, &out_path)) return NULL;
+
+    struct msszdd_decompressor *szdd = szddd_create(NULL);
+    if (!szdd) {
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct msszddd_header *hdr = szdd->open(szdd, path);
+    if (!hdr) {
+        int err = szdd->last_error(szdd);
+        szddd_destroy(szdd);
+        return PyLong_FromLong(err);
+    }
+
+    int err = szdd->extract(szdd, hdr, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = szdd->last_error(szdd);
+    }
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_szdd_extract_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    PyObject *out_obj = NULL;
+    PyObject *out_bytes = NULL;
+    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) return NULL;
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+    const char *mem_name = "pylibmspack:memszdd";
+    struct memcab_system sys;
+    memset(&sys, 0, sizeof(sys));
+    sys.data = (const unsigned char *)buf.buf;
+    sys.size = (size_t)buf.len;
+    sys.mem_name = mem_name;
+    sys.sys.open = mem_open;
+    sys.sys.close = mem_close;
+    sys.sys.read = mem_read;
+    sys.sys.write = mem_write;
+    sys.sys.seek = mem_seek;
+    sys.sys.tell = mem_tell;
+    sys.sys.message = mem_message;
+    sys.sys.alloc = mem_alloc;
+    sys.sys.free = mem_free;
+    sys.sys.copy = mem_copy;
+    sys.sys.null_ptr = NULL;
+
+    struct msszdd_decompressor *szdd = szddd_create(&sys.sys);
+    if (!szdd) {
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+    struct msszddd_header *hdr = szdd->open(szdd, mem_name);
+    if (!hdr) {
+        int err = szdd->last_error(szdd);
+        szddd_destroy(szdd);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(err);
+    }
+
+    int err = szdd->extract(szdd, hdr, out_path);
+    if (err != MSPACK_ERR_OK) {
+        err = szdd->last_error(szdd);
+    }
+    szdd->close(szdd, hdr);
+    szddd_destroy(szdd);
+    Py_DECREF(out_bytes);
+    PyBuffer_Release(&buf);
+    return PyLong_FromLong(err);
+}
+
 static PyMethodDef CabMethods[] = {
     {"list_files", py_cab_list, METH_VARARGS, "List files in a CAB"},
     {"list_files_bytes", py_cab_list_bytes, METH_VARARGS, "List files in a CAB from bytes"},
@@ -1070,6 +1757,16 @@ static PyMethodDef CabMethods[] = {
     {"extract_file_bytes", py_cab_extract_bytes, METH_VARARGS, "Extract a CAB member from bytes"},
     {"cab_info", py_cab_info, METH_VARARGS, "Read CAB header info"},
     {"cab_info_bytes", py_cab_info_bytes, METH_VARARGS, "Read CAB header info from bytes"},
+    {"chm_list_files", py_chm_list, METH_VARARGS, "List files in a CHM"},
+    {"chm_list_files_bytes", py_chm_list_bytes, METH_VARARGS, "List files in a CHM from bytes"},
+    {"chm_extract_file", py_chm_extract, METH_VARARGS, "Extract a CHM member"},
+    {"chm_extract_file_bytes", py_chm_extract_bytes, METH_VARARGS, "Extract a CHM member from bytes"},
+    {"chm_info", py_chm_info, METH_VARARGS, "Read CHM header info"},
+    {"chm_info_bytes", py_chm_info_bytes, METH_VARARGS, "Read CHM header info from bytes"},
+    {"szdd_info", py_szdd_info, METH_VARARGS, "Read SZDD header info"},
+    {"szdd_info_bytes", py_szdd_info_bytes, METH_VARARGS, "Read SZDD header info from bytes"},
+    {"szdd_extract", py_szdd_extract, METH_VARARGS, "Extract SZDD data"},
+    {"szdd_extract_bytes", py_szdd_extract_bytes, METH_VARARGS, "Extract SZDD data from bytes"},
     {NULL, NULL, 0, NULL},
 };
 
@@ -1137,9 +1834,15 @@ PyMODINIT_FUNC PyInit__cab(void) {
 #endif
     PyModule_AddIntConstant(m, "MSPACK_ERR_OK", MSPACK_ERR_OK);
     PyModule_AddIntConstant(m, "MSPACK_ERR_ARGS", MSPACK_ERR_ARGS);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_OPEN", MSPACK_ERR_OPEN);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_READ", MSPACK_ERR_READ);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_WRITE", MSPACK_ERR_WRITE);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_SEEK", MSPACK_ERR_SEEK);
     PyModule_AddIntConstant(m, "MSPACK_ERR_DATAFORMAT", MSPACK_ERR_DATAFORMAT);
     PyModule_AddIntConstant(m, "MSPACK_ERR_DECRUNCH", MSPACK_ERR_DECRUNCH);
     PyModule_AddIntConstant(m, "MSPACK_ERR_BADCOMP", MSPACK_ERR_BADCOMP);
     PyModule_AddIntConstant(m, "MSPACK_ERR_NOMEMORY", MSPACK_ERR_NOMEMORY);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_SIGNATURE", MSPACK_ERR_SIGNATURE);
+    PyModule_AddIntConstant(m, "MSPACK_ERR_CHECKSUM", MSPACK_ERR_CHECKSUM);
     return m;
 }

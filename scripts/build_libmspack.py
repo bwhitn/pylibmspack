@@ -155,6 +155,10 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
             b"EXPORTS\r\n"
             b"    mspack_create_cab_decompressor\r\n"
             b"    mspack_destroy_cab_decompressor\r\n"
+            b"    mspack_create_chm_decompressor\r\n"
+            b"    mspack_destroy_chm_decompressor\r\n"
+            b"    mspack_create_szdd_decompressor\r\n"
+            b"    mspack_destroy_szdd_decompressor\r\n"
         )
     cmd = [
         "cl",

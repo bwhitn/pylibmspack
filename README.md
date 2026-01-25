@@ -1,6 +1,6 @@
 # pylibmspack
 
-`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB files, including Quantum and LZX cabinets. It is a CPython extension (no subprocess calls).
+`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, and SZDD files. It is a CPython extension (no subprocess calls).
 
 ## Install
 
@@ -52,6 +52,51 @@ except CabPathTraversalError as exc:
 
 # Raw extraction (no safety checks)
 cab.extract_all_raw("./out-raw")
+```
+
+### CHM extraction
+
+```python
+from pylibmspack import ChmArchive
+
+chm = ChmArchive("manual.chm")
+print(chm.info())
+print(chm.files())
+
+data = chm.read("index.html")
+chm.extract_all("./chm-out")
+```
+
+### CHM from bytes
+
+```python
+from pylibmspack import ChmArchive
+
+data = open("manual.chm", "rb").read()
+chm = ChmArchive.from_bytes(data)
+print(chm.files())
+```
+
+### SZDD extraction
+
+```python
+from pylibmspack import SzddFile
+
+szdd = SzddFile("readme.tx_")
+print(szdd.info())
+
+payload = szdd.read()
+szdd.extract("./out")
+```
+
+### SZDD from bytes
+
+```python
+from pylibmspack import SzddFile
+
+data = open("readme.tx_", "rb").read()
+szdd = SzddFile.from_bytes(data, name="readme.tx_")
+print(szdd.info())
 ```
 
 ### Multi-cabinet sets
@@ -145,14 +190,106 @@ Return parsed CAB header metadata. The `CabInfo` dict includes:
 - `files_count` (int)
 - `folders_count` (int)
 
+### ChmArchive(path: str)
+
+Open a CHM archive on disk.
+
+### ChmArchive.files(*, include_system: bool = True) -> list[ChmFileInfo]
+
+Return metadata for each member as a `ChmFileInfo` TypedDict. Each entry includes:
+
+- `name` (str)
+- `size` (int)
+- `offset` (int)
+- `section_id` (int)
+- `section` (str: `uncompressed`, `mscompressed`, `unknown`)
+- `is_system` (bool)
+
+### ChmArchive.read(name: str, *, max_size: int = 256*1024*1024) -> bytes
+
+Extract a member and return its bytes.
+
+### ChmArchive.extract(name: str, dest_dir: str, *, safe: bool = True) -> str
+
+Extract a member to disk and return the output path.
+
+### ChmArchive.extract_all(dest_dir: str, *, safe: bool = True, include_system: bool = True) -> list[str]
+
+Extract all members to disk and return output paths.
+
+### ChmArchive.extract_raw(name: str, dest_dir: str) -> str
+
+Extract a member using the raw path (no safety checks).
+
+### ChmArchive.extract_all_raw(dest_dir: str, *, include_system: bool = True) -> list[str]
+
+Extract all members using raw paths (no safety checks).
+
+### ChmArchive.info() -> ChmInfo
+
+Return parsed CHM header metadata. The `ChmInfo` dict includes:
+
+- `filename` (str | None)
+- `length` (int)
+- `version` (int)
+- `timestamp` (int)
+- `language` (int)
+- `dir_offset` (int)
+- `num_chunks` (int)
+- `chunk_size` (int)
+- `density` (int)
+- `depth` (int)
+- `index_root` (int)
+- `first_pmgl` (int)
+- `last_pmgl` (int)
+- `files_count` (int)
+- `sysfiles_count` (int)
+
+### ChmArchive.from_bytes(data: bytes) -> ChmArchive
+
+Create an archive backed by in-memory bytes instead of a file path.
+
+### SzddFile(path: str)
+
+Open a SZDD-compressed file on disk.
+
+### SzddFile.info() -> SzddInfo
+
+Return parsed SZDD header metadata. The `SzddInfo` dict includes:
+
+- `format_id` (int)
+- `format` (str: `normal`, `qbasic`, `unknown`)
+- `length` (int)
+- `missing_char` (int)
+- `missing_char_str` (str)
+- `suggested_name` (str)
+
+### SzddFile.read(*, max_size: int = 256*1024*1024) -> bytes
+
+Decompress and return the file contents.
+
+### SzddFile.extract(dest_dir: str, *, safe: bool = True, out_name: str | None = None) -> str
+
+Decompress to disk and return the output path.
+
+### SzddFile.extract_raw(dest_dir: str, *, out_name: str | None = None) -> str
+
+Decompress using raw (unsafe) path handling.
+
+### SzddFile.from_bytes(data: bytes, *, name: str = "memory.sz_") -> SzddFile
+
+Create a SZDD reader backed by in-memory bytes.
 ### Exceptions
 
-All errors derive from `CabError`:
+All errors derive from `MspackError`:
 
-- `CabError`
-- `CabFormatError`
-- `CabDecompressionError`
-- `CabPathTraversalError`
+- `MspackError`
+- `MspackFormatError`
+- `MspackDecompressionError`
+- `MspackPathTraversalError`
+- `CabError` / `CabFormatError` / `CabDecompressionError` / `CabPathTraversalError`
+- `ChmError` / `ChmFormatError` / `ChmDecompressionError` / `ChmPathTraversalError`
+- `SzddError` / `SzddFormatError` / `SzddDecompressionError` / `SzddPathTraversalError`
 
 ## Safe extraction
 
@@ -173,6 +310,11 @@ python -m pip install -e .
 ```
 
 If you want to supply a local tarball, pass `--tarball` to `scripts/build_libmspack.py`. To allow a network download during builds, set `PYLIBMSPACK_ALLOW_DOWNLOAD=1` (disabled by default).
+
+## CHM test fixture
+
+The CHM tests use the redistributable fixture at `tests/fixtures/sample.chm`
+(NSIS documentation under the zlib/libpng license).
 
 ## Licensing
 

@@ -1,4 +1,7 @@
 *.cab -text
+*.chm -text
+*.sz_ -text
+*.tx_ -text
 *.tar.xz -text
 *.dylib -text
 *.dll -text

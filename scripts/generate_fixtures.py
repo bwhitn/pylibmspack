@@ -30,6 +30,21 @@ def main():
         raise SystemExit("replacement length mismatch")
     traversal = normal_bytes[:idx] + replacement + normal_bytes[idx + len(needle):]
     (FIXTURES_DIR / "traversal.cab").write_bytes(traversal)
+
+    # Generate a minimal SZDD fixture using literal-only encoding.
+    payload = b"SZDDTEST"
+    expected_dir = FIXTURES_DIR / "expected"
+    expected_dir.mkdir(parents=True, exist_ok=True)
+    (expected_dir / "szdd.txt").write_bytes(payload)
+
+    sig = bytes([0x53, 0x5A, 0x44, 0x44, 0x88, 0xF0, 0x27, 0x33])
+    mode = bytes([0x41])
+    missing = bytes([ord("t")])
+    length = len(payload).to_bytes(4, "little")
+    control = bytes([0xFF])
+    compressed = control + payload
+    out = sig + mode + missing + length + compressed
+    (FIXTURES_DIR / "sample.tx_").write_bytes(out)
     print("wrote fixtures to", FIXTURES_DIR)
 
 
