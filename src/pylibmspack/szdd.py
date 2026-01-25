@@ -20,12 +20,13 @@ _ERR_DECRUNCH = getattr(_cab, "MSPACK_ERR_DECRUNCH", -1)
 _ERR_BADCOMP = getattr(_cab, "MSPACK_ERR_BADCOMP", -1)
 _ERR_SIGNATURE = getattr(_cab, "MSPACK_ERR_SIGNATURE", -1)
 _ERR_CHECKSUM = getattr(_cab, "MSPACK_ERR_CHECKSUM", -1)
+_ERR_READ = getattr(_cab, "MSPACK_ERR_READ", -1)
 
 
 def _raise_for_err(err: int, context: str) -> None:
     if err == _ERR_OK:
         return
-    if err in {_ERR_DATAFORMAT, _ERR_BADCOMP, _ERR_SIGNATURE, _ERR_CHECKSUM}:
+    if err in {_ERR_DATAFORMAT, _ERR_BADCOMP, _ERR_SIGNATURE, _ERR_CHECKSUM, _ERR_READ}:
         raise SzddFormatError(f"{context} failed: libmspack error {err}")
     if err == _ERR_DECRUNCH:
         raise SzddDecompressionError(f"{context} failed: libmspack error {err}")
