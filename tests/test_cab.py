@@ -100,7 +100,7 @@ def test_cab_extract_raw_allows_parent(tmp_path):
 
     cab = CabArchive.from_bytes(patched)
     dest = tmp_path / "a" / "b"
-    out_path = cab.extract_raw("..\\\\cxxx", str(dest))
+    out_path = cab.extract_raw("..\\cxxx", str(dest))
     out_path = Path(out_path)
     assert out_path.exists()
     assert out_path.parent == tmp_path / "a"
