@@ -42,13 +42,16 @@ jobs:
           path: dist/*
 
   wheels:
-    name: Build wheels (${{ matrix.os }})
+    name: Build wheels (${{ matrix.os }}${{ matrix.linux_arch && format(' {0}', matrix.linux_arch) || '' }}${{ matrix.win_arch && format(' {0}', matrix.win_arch) || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
+            linux_arch: x86_64
+          - os: ubuntu-latest
+            linux_arch: aarch64
           - os: macos-latest
           - os: windows-latest
             win_arch: AMD64
@@ -57,7 +60,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup QEMU
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
         uses: docker/setup-qemu-action@v3
       - uses: actions/setup-python@v5
         with:
@@ -72,7 +75,7 @@ jobs:
       - name: Build wheels
         env:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
-          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+          CIBW_ARCHS_LINUX: ${{ matrix.linux_arch || '' }}
           CIBW_ARCHS_MACOS: "universal2"
           CIBW_ARCHS_WINDOWS: ${{ matrix.win_arch || 'AMD64' }}
           MACOSX_DEPLOYMENT_TARGET: "11.0"
@@ -81,7 +84,7 @@ jobs:
         run: python -m cibuildwheel --output-dir wheelhouse
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}${{ matrix.win_arch && format('-{0}', matrix.win_arch) || '' }}
+          name: wheels-${{ matrix.os }}${{ matrix.linux_arch && format('-{0}', matrix.linux_arch) || '' }}${{ matrix.win_arch && format('-{0}', matrix.win_arch) || '' }}
           path: wheelhouse/*.whl
 
   publish-testpypi:
@@ -107,10 +110,20 @@ jobs:
         shell: bash
         run: |
           TAG="${{ steps.resolve-tag.outputs.release_tag }}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid tag: $TAG"
-            exit 1
-          fi
+          python - <<'PY'
+import re, os, sys
+tag = os.environ["TAG"]
+pat = r"^v[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?$"
+if not re.match(pat, tag):
+    print(f"Invalid tag: {tag}")
+    sys.exit(1)
+PY
+        env:
+          TAG: ${{ steps.resolve-tag.outputs.release_tag }}
+      - name: Validate tag exists
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve-tag.outputs.release_tag }}"
           if ! git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
             echo "Tag not found: $TAG"
             exit 1
