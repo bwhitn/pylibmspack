@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pylibmspack import SzddFile, SzddFormatError
+from pylibmspack import SzddError, SzddFile, SzddFormatError
 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -36,3 +36,9 @@ def test_szdd_invalid_bytes():
     szdd = SzddFile.from_bytes(b"not a szdd", name="bad.sz_")
     with pytest.raises(SzddFormatError):
         szdd.info()
+
+
+def test_szdd_max_size():
+    szdd = SzddFile(str(FIXTURES / "sample.tx_"))
+    with pytest.raises(SzddError):
+        szdd.read(max_size=1)

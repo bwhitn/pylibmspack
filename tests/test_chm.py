@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from pylibmspack import ChmArchive, ChmFormatError
+from pylibmspack import (
+    ChmArchive,
+    ChmError,
+    ChmFormatError,
+    ChmPathTraversalError,
+)
 
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -72,3 +77,25 @@ def test_chm_invalid_bytes():
     chm = ChmArchive.from_bytes(b"not a chm")
     with pytest.raises(ChmFormatError):
         chm.info()
+
+
+def test_chm_missing_member():
+    chm = ChmArchive(str(SAMPLE_CHM))
+    with pytest.raises(ChmError):
+        chm.read("no_such_member.txt")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../evil.txt",
+        "..\\evil.txt",
+        "/../evil.txt",
+        "C:\\evil.txt",
+        "\\\\server\\share\\evil.txt",
+    ],
+)
+def test_chm_safe_extract_blocks_traversal(tmp_path, name):
+    chm = ChmArchive(str(SAMPLE_CHM))
+    with pytest.raises(ChmPathTraversalError):
+        chm.extract(name, str(tmp_path), safe=True)

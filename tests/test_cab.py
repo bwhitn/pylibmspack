@@ -87,3 +87,20 @@ def test_cab_invalid_bytes():
     cab = CabArchive.from_bytes(b"not a cab")
     with pytest.raises(CabFormatError):
         cab.info()
+
+
+def test_cab_extract_raw_allows_parent(tmp_path):
+    data = (FIXTURES / "normal_2files_1folder.cab").read_bytes()
+    needle = b"hello.c\x00"
+    idx = data.find(needle)
+    assert idx != -1
+    replacement = b"..\\cxxx\0"
+    assert len(replacement) == len(needle)
+    patched = data[:idx] + replacement + data[idx + len(needle):]
+
+    cab = CabArchive.from_bytes(patched)
+    dest = tmp_path / "a" / "b"
+    out_path = cab.extract_raw("..\\\\cxxx", str(dest))
+    out_path = Path(out_path)
+    assert out_path.exists()
+    assert out_path.parent == tmp_path / "a"
