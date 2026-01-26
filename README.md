@@ -1,6 +1,6 @@
 # pylibmspack
 
-`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, SZDD, and KWAJ files. It is a CPython extension (no subprocess calls).
+`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, SZDD, and KWAJ files.
 
 ## Install
 
@@ -8,7 +8,7 @@
 pip install pylibmspack
 ```
 
-Supports Python 3.9 through 3.13.
+Supports Python 3.9+
 
 ## Usage
 
