@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import tarfile
 from pathlib import Path
 
@@ -15,7 +14,9 @@ def main():
 
     with tarfile.open(VENDORED, "r:xz") as tf:
         mszip = tf.getmember("libmspack-0.10.1alpha/test/test_files/cabd/mszip_lzx_qtm.cab")
-        normal = tf.getmember("libmspack-0.10.1alpha/test/test_files/cabd/normal_2files_1folder.cab")
+        normal = tf.getmember(
+            "libmspack-0.10.1alpha/test/test_files/cabd/normal_2files_1folder.cab"
+        )
         kwaj = tf.getmember("libmspack-0.10.1alpha/test/test_files/kwajd/f00.kwj")
         (FIXTURES_DIR / "small_mszip.cab").write_bytes(tf.extractfile(mszip).read())
         normal_bytes = tf.extractfile(normal).read()
@@ -30,7 +31,7 @@ def main():
     replacement = b"..\\\\..\\\\a\\x00"
     if len(replacement) != len(needle):
         raise SystemExit("replacement length mismatch")
-    traversal = normal_bytes[:idx] + replacement + normal_bytes[idx + len(needle):]
+    traversal = normal_bytes[:idx] + replacement + normal_bytes[idx + len(needle) :]
     (FIXTURES_DIR / "traversal.cab").write_bytes(traversal)
 
     # Generate a minimal SZDD fixture using literal-only encoding.

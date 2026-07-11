@@ -9,7 +9,6 @@ from pylibmspack import (
     ChmPathTraversalError,
 )
 
-
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SAMPLE_CHM = FIXTURES / "sample.chm"
 

@@ -4,7 +4,6 @@ import pytest
 
 from pylibmspack import SzddError, SzddFile, SzddFormatError
 
-
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
 

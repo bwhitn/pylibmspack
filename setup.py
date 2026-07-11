@@ -64,15 +64,26 @@ class BuildExt(build_ext):
         shared_lib = Path(info["shared_lib"])
         if not shared_lib.exists():
             return
-        build_lib = Path(self.build_lib)
-        pkg_libs = build_lib / "pylibmspack" / ".libs"
+
+        package_dirs = {Path(self.build_lib) / "pylibmspack"}
+        if self.inplace:
+            package_dirs.update(
+                Path(self.get_ext_fullpath(ext.name)).resolve().parent for ext in self.extensions
+            )
+
+        for package_dir in package_dirs:
+            self._copy_libmspack(shared_lib, package_dir)
+
+    def _copy_libmspack(self, shared_lib: Path, package_dir: Path) -> None:
+        package_dir.mkdir(parents=True, exist_ok=True)
+        pkg_libs = package_dir / ".libs"
         pkg_libs.mkdir(parents=True, exist_ok=True)
         shutil.copy2(shared_lib, pkg_libs / shared_lib.name)
         if sys.platform == "darwin":
-            pkg_dylibs = build_lib / "pylibmspack" / ".dylibs"
+            pkg_dylibs = package_dir / ".dylibs"
             pkg_dylibs.mkdir(parents=True, exist_ok=True)
             shutil.copy2(shared_lib, pkg_dylibs / shared_lib.name)
-            shutil.copy2(shared_lib, build_lib / "pylibmspack" / shared_lib.name)
+            shutil.copy2(shared_lib, package_dir / shared_lib.name)
 
 
 ext_modules = [

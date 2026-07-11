@@ -1,6 +1,6 @@
 # pylibmspack
 
-`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, SZDD, and KWAJ files.
+`pylibmspack` provides in-process Python bindings to **libmspack** for reading and extracting Microsoft CAB, CHM, SZDD, KWAJ, OAB, and HLP LZSS streams.
 
 ## Install
 
@@ -9,6 +9,18 @@ pip install pylibmspack
 ```
 
 Supports Python 3.9+
+
+## Development
+
+```bash
+python -m pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+python scripts/check_c_binding.py
+python -m pytest
+```
+
+The editable install builds the local C extension and uses the vendored libmspack source tarball.
 
 ## Usage
 
@@ -119,6 +131,35 @@ data = open("setup.kwj", "rb").read()
 kwj = KwajFile.from_bytes(data, name="setup.kwj")
 print(kwj.info())
 ```
+
+### HLP LZSS stream extraction
+
+```python
+from pylibmspack import HlpFile
+
+hlp = HlpFile("compressed-help-stream.hlp")
+data = hlp.read()
+hlp.extract("./out", out_name="help-stream.bin")
+```
+
+The bundled libmspack 0.10.1 source exposes the Microsoft Help LZSS codec, but
+does not implement a full WinHelp `.hlp` container and topic parser.
+
+### OAB extraction
+
+```python
+from pylibmspack import OabFile, OabPatch
+
+oab = OabFile("full-download.lzx")
+data = oab.read()
+oab.extract("./out", out_name="address-book.oab")
+
+patch = OabPatch("incremental-patch.lzx")
+patch.apply("address-book.oab", "./out", out_name="address-book-new.oab")
+```
+
+OAB `.lzx` files are Exchange Offline Address Book payloads that use LZX
+compression; this is not a generic LZX archive interface.
 
 ### Multi-cabinet sets
 
@@ -346,6 +387,8 @@ All errors derive from `MspackError`:
 - `ChmError` / `ChmFormatError` / `ChmDecompressionError` / `ChmPathTraversalError`
 - `SzddError` / `SzddFormatError` / `SzddDecompressionError` / `SzddPathTraversalError`
 - `KwajError` / `KwajFormatError` / `KwajDecompressionError` / `KwajPathTraversalError`
+- `HlpError` / `HlpFormatError` / `HlpDecompressionError` / `HlpPathTraversalError`
+- `OabError` / `OabFormatError` / `OabDecompressionError` / `OabPathTraversalError`
 
 ## Safe extraction
 

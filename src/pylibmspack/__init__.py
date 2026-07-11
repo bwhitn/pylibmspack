@@ -1,11 +1,10 @@
-"""In-process libmspack bindings for CAB, CHM, and SZDD files."""
+"""In-process libmspack bindings for Microsoft compression formats."""
 
 from __future__ import annotations
 
-from . import _libmspack as _libmspack  # noqa: F401
+from . import _libmspack as _libmspack
 from .cab import CabArchive, CabFileInfo, CabInfo
 from .chm import ChmArchive, ChmFileInfo, ChmInfo
-from .kwaj import KwajFile, KwajInfo
 from .errors import (
     CabDecompressionError,
     CabError,
@@ -15,6 +14,10 @@ from .errors import (
     ChmError,
     ChmFormatError,
     ChmPathTraversalError,
+    HlpDecompressionError,
+    HlpError,
+    HlpFormatError,
+    HlpPathTraversalError,
     KwajDecompressionError,
     KwajError,
     KwajFormatError,
@@ -23,44 +26,62 @@ from .errors import (
     MspackError,
     MspackFormatError,
     MspackPathTraversalError,
+    OabDecompressionError,
+    OabError,
+    OabFormatError,
+    OabPathTraversalError,
     SzddDecompressionError,
     SzddError,
     SzddFormatError,
     SzddPathTraversalError,
 )
+from .hlp import HlpFile
+from .kwaj import KwajFile, KwajInfo
+from .oab import OabFile, OabPatch
 from .szdd import SzddFile, SzddInfo
 
 __all__ = [
     "CabArchive",
+    "CabDecompressionError",
+    "CabError",
     "CabFileInfo",
+    "CabFormatError",
     "CabInfo",
+    "CabPathTraversalError",
     "ChmArchive",
+    "ChmDecompressionError",
+    "ChmError",
     "ChmFileInfo",
+    "ChmFormatError",
     "ChmInfo",
-    "SzddFile",
-    "SzddInfo",
+    "ChmPathTraversalError",
+    "HlpDecompressionError",
+    "HlpError",
+    "HlpFile",
+    "HlpFormatError",
+    "HlpPathTraversalError",
+    "KwajDecompressionError",
+    "KwajError",
     "KwajFile",
+    "KwajFormatError",
     "KwajInfo",
+    "KwajPathTraversalError",
+    "MspackDecompressionError",
     "MspackError",
     "MspackFormatError",
-    "MspackDecompressionError",
     "MspackPathTraversalError",
-    "CabError",
-    "CabFormatError",
-    "CabDecompressionError",
-    "CabPathTraversalError",
-    "ChmError",
-    "ChmFormatError",
-    "ChmDecompressionError",
-    "ChmPathTraversalError",
-    "SzddError",
-    "SzddFormatError",
+    "OabDecompressionError",
+    "OabError",
+    "OabFile",
+    "OabFormatError",
+    "OabPatch",
+    "OabPathTraversalError",
     "SzddDecompressionError",
+    "SzddError",
+    "SzddFile",
+    "SzddFormatError",
+    "SzddInfo",
     "SzddPathTraversalError",
-    "KwajError",
-    "KwajFormatError",
-    "KwajDecompressionError",
-    "KwajPathTraversalError",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

@@ -14,7 +14,6 @@ from .errors import (
     CabPathTraversalError,
 )
 
-
 _ERR_OK = getattr(_cab, "MSPACK_ERR_OK", 0)
 _ERR_DATAFORMAT = getattr(_cab, "MSPACK_ERR_DATAFORMAT", -1)
 _ERR_DECRUNCH = getattr(_cab, "MSPACK_ERR_DECRUNCH", -1)

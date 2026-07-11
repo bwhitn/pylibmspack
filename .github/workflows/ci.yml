@@ -5,9 +5,45 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lint tools
+        run: python -m pip install --upgrade pip "ruff>=0.15.0"
+      - name: Ruff check
+        run: ruff check .
+      - name: Ruff format
+        run: ruff format --check .
+      - name: C binding warning check
+        run: python scripts/check_c_binding.py
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify vendored libmspack tarball
+        run: >
+          python -c "from pathlib import Path; path=Path('src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz');
+          (path.exists() or (_ for _ in ()).throw(SystemExit(f'Missing vendored tarball: {path}')));
+          print(f'Found {path}')"
+      - name: Install package and test tools
+        run: python -m pip install --upgrade pip ".[dev]"
+      - name: Run tests
+        run: python -m pytest
+
   build:
     name: Build wheels (${{ matrix.os }}${{ matrix.linux_arch && format(' {0}', matrix.linux_arch) || '' }}${{ matrix.win_arch && format(' {0}', matrix.win_arch) || '' }})
     runs-on: ${{ matrix.os }}
+    needs: [lint, test]
     strategy:
       fail-fast: false
       matrix:

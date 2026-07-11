@@ -76,3 +76,35 @@ class KwajDecompressionError(KwajError, MspackDecompressionError):
 
 class KwajPathTraversalError(KwajError, MspackPathTraversalError):
     """Unsafe path detected during extraction."""
+
+
+class HlpError(MspackError):
+    """Base error for HLP LZSS stream handling."""
+
+
+class HlpFormatError(HlpError, MspackFormatError):
+    """HLP stream is corrupt, truncated, or uses unsupported features."""
+
+
+class HlpDecompressionError(HlpError, MspackDecompressionError):
+    """HLP stream could not be decompressed."""
+
+
+class HlpPathTraversalError(HlpError, MspackPathTraversalError):
+    """Unsafe path detected during extraction."""
+
+
+class OabError(MspackError):
+    """Base error for OAB handling."""
+
+
+class OabFormatError(OabError, MspackFormatError):
+    """OAB file is corrupt, truncated, or uses unsupported features."""
+
+
+class OabDecompressionError(OabError, MspackDecompressionError):
+    """OAB file could not be decompressed."""
+
+
+class OabPathTraversalError(OabError, MspackPathTraversalError):
+    """Unsafe path detected during extraction."""

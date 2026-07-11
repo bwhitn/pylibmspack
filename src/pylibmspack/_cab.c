@@ -1,5 +1,6 @@
 #include <Python.h>
 #include "mspack.h"
+#include "lzss.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,6 +118,9 @@
 #ifndef MSKWAJ_HDR_HASEXTRATEXT
 #define MSKWAJ_HDR_HASEXTRATEXT 0x20
 #endif
+#ifndef HLP_INPUT_SIZE
+#define HLP_INPUT_SIZE 2048
+#endif
 
 static PyObject *decode_filename(const char *name) {
     if (!name) {
@@ -150,6 +154,8 @@ typedef struct msszdd_decompressor *(*szddd_create_fn)(struct mspack_system *sys
 typedef void (*szddd_destroy_fn)(struct msszdd_decompressor *self);
 typedef struct mskwaj_decompressor *(*kwajd_create_fn)(struct mspack_system *sys);
 typedef void (*kwajd_destroy_fn)(struct mskwaj_decompressor *self);
+typedef struct msoab_decompressor *(*oabd_create_fn)(struct mspack_system *sys);
+typedef void (*oabd_destroy_fn)(struct msoab_decompressor *self);
 static cabd_create_fn g_cabd_create = NULL;
 static cabd_destroy_fn g_cabd_destroy = NULL;
 static chmd_create_fn g_chmd_create = NULL;
@@ -158,6 +164,8 @@ static szddd_create_fn g_szdd_create = NULL;
 static szddd_destroy_fn g_szdd_destroy = NULL;
 static kwajd_create_fn g_kwaj_create = NULL;
 static kwajd_destroy_fn g_kwaj_destroy = NULL;
+static oabd_create_fn g_oab_create = NULL;
+static oabd_destroy_fn g_oab_destroy = NULL;
 static void *g_mspack_handle = NULL;
 
 static int ensure_mspack_loaded(const char *path) {
@@ -176,8 +184,11 @@ static int ensure_mspack_loaded(const char *path) {
     g_szdd_destroy = (szddd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_szdd_decompressor");
     g_kwaj_create = (kwajd_create_fn)dlsym(g_mspack_handle, "mspack_create_kwaj_decompressor");
     g_kwaj_destroy = (kwajd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_kwaj_decompressor");
+    g_oab_create = (oabd_create_fn)dlsym(g_mspack_handle, "mspack_create_oab_decompressor");
+    g_oab_destroy = (oabd_destroy_fn)dlsym(g_mspack_handle, "mspack_destroy_oab_decompressor");
     if (!g_cabd_create || !g_cabd_destroy || !g_chmd_create || !g_chmd_destroy ||
-        !g_szdd_create || !g_szdd_destroy || !g_kwaj_create || !g_kwaj_destroy) {
+        !g_szdd_create || !g_szdd_destroy || !g_kwaj_create || !g_kwaj_destroy ||
+        !g_oab_create || !g_oab_destroy) {
         return -1;
     }
     return 0;
@@ -257,6 +268,25 @@ static void kwajd_destroy(struct mskwaj_decompressor *kwaj) {
     }
 #else
     mspack_destroy_kwaj_decompressor(kwaj);
+#endif
+}
+
+static struct msoab_decompressor *oabd_create(struct mspack_system *sys) {
+#ifdef __APPLE__
+    if (g_oab_create == NULL || g_oab_destroy == NULL) return NULL;
+    return g_oab_create(sys);
+#else
+    return mspack_create_oab_decompressor(sys);
+#endif
+}
+
+static void oabd_destroy(struct msoab_decompressor *oab) {
+#ifdef __APPLE__
+    if (g_oab_destroy) {
+        g_oab_destroy(oab);
+    }
+#else
+    mspack_destroy_oab_decompressor(oab);
 #endif
 }
 
@@ -404,6 +434,29 @@ static void mem_free(void *ptr) {
 
 static void mem_copy(void *src, void *dest, size_t bytes) {
     memcpy(dest, src, bytes);
+}
+
+static void init_memcab_system(
+    struct memcab_system *sys,
+    const unsigned char *data,
+    size_t size,
+    const char *mem_name
+) {
+    memset(sys, 0, sizeof(*sys));
+    sys->data = data;
+    sys->size = size;
+    sys->mem_name = mem_name;
+    sys->sys.open = mem_open;
+    sys->sys.close = mem_close;
+    sys->sys.read = mem_read;
+    sys->sys.write = mem_write;
+    sys->sys.seek = mem_seek;
+    sys->sys.tell = mem_tell;
+    sys->sys.message = mem_message;
+    sys->sys.alloc = mem_alloc;
+    sys->sys.free = mem_free;
+    sys->sys.copy = mem_copy;
+    sys->sys.null_ptr = NULL;
 }
 
 static int dict_set_owned(PyObject *dict, const char *key, PyObject *value) {
@@ -2023,6 +2076,218 @@ static PyObject *py_kwaj_extract_bytes(PyObject *self, PyObject *args) {
     return PyLong_FromLong(err);
 }
 
+static PyObject *py_hlp_decompress(PyObject *self, PyObject *args) {
+    PyObject *path_obj;
+    PyObject *out_obj;
+    PyObject *path_bytes = NULL;
+    PyObject *out_bytes = NULL;
+    if (!PyArg_ParseTuple(args, "OO", &path_obj, &out_obj)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(path_obj, &path_bytes)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        Py_DECREF(path_bytes);
+        return NULL;
+    }
+
+    const char *path = PyBytes_AS_STRING(path_bytes);
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+
+    struct memcab_system sys;
+    init_memcab_system(&sys, NULL, 0, NULL);
+
+    struct mspack_file *input = sys.sys.open(&sys.sys, path, MSPACK_SYS_OPEN_READ);
+    if (!input) {
+        Py_DECREF(path_bytes);
+        Py_DECREF(out_bytes);
+        return PyLong_FromLong(MSPACK_ERR_OPEN);
+    }
+    struct mspack_file *output = sys.sys.open(&sys.sys, out_path, MSPACK_SYS_OPEN_WRITE);
+    if (!output) {
+        sys.sys.close(input);
+        Py_DECREF(path_bytes);
+        Py_DECREF(out_bytes);
+        return PyLong_FromLong(MSPACK_ERR_WRITE);
+    }
+
+    int err = lzss_decompress(&sys.sys, input, output, HLP_INPUT_SIZE, LZSS_MODE_MSHELP);
+    sys.sys.close(output);
+    sys.sys.close(input);
+    Py_DECREF(path_bytes);
+    Py_DECREF(out_bytes);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_hlp_decompress_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    PyObject *out_obj;
+    PyObject *out_bytes = NULL;
+    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+    const char *mem_name = "pylibmspack:memhlp";
+    struct memcab_system sys;
+    init_memcab_system(&sys, (const unsigned char *)buf.buf, (size_t)buf.len, mem_name);
+
+    struct mspack_file *input = sys.sys.open(&sys.sys, mem_name, MSPACK_SYS_OPEN_READ);
+    if (!input) {
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_OPEN);
+    }
+    struct mspack_file *output = sys.sys.open(&sys.sys, out_path, MSPACK_SYS_OPEN_WRITE);
+    if (!output) {
+        sys.sys.close(input);
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_WRITE);
+    }
+
+    int err = lzss_decompress(&sys.sys, input, output, HLP_INPUT_SIZE, LZSS_MODE_MSHELP);
+    sys.sys.close(output);
+    sys.sys.close(input);
+    Py_DECREF(out_bytes);
+    PyBuffer_Release(&buf);
+    return PyLong_FromLong(err);
+}
+
+static int set_oab_decompbuf(struct msoab_decompressor *oab, int decompbuf) {
+    if (decompbuf == 4096) {
+        return MSPACK_ERR_OK;
+    }
+    return oab->set_param(oab, MSOABD_PARAM_DECOMPBUF, decompbuf);
+}
+
+static PyObject *py_oab_decompress(PyObject *self, PyObject *args) {
+    PyObject *path_obj;
+    PyObject *out_obj;
+    PyObject *path_bytes = NULL;
+    PyObject *out_bytes = NULL;
+    int decompbuf = 4096;
+    if (!PyArg_ParseTuple(args, "OO|i", &path_obj, &out_obj, &decompbuf)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(path_obj, &path_bytes)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        Py_DECREF(path_bytes);
+        return NULL;
+    }
+
+    const char *path = PyBytes_AS_STRING(path_bytes);
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+
+    struct memcab_system sys;
+    init_memcab_system(&sys, NULL, 0, NULL);
+    struct msoab_decompressor *oab = oabd_create(&sys.sys);
+    if (!oab) {
+        Py_DECREF(path_bytes);
+        Py_DECREF(out_bytes);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+
+    int err = set_oab_decompbuf(oab, decompbuf);
+    if (err == MSPACK_ERR_OK) {
+        err = oab->decompress(oab, path, out_path);
+    }
+    oabd_destroy(oab);
+    Py_DECREF(path_bytes);
+    Py_DECREF(out_bytes);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_oab_decompress_bytes(PyObject *self, PyObject *args) {
+    Py_buffer buf;
+    PyObject *out_obj;
+    PyObject *out_bytes = NULL;
+    int decompbuf = 4096;
+    if (!PyArg_ParseTuple(args, "y*O|i", &buf, &out_obj, &decompbuf)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        PyBuffer_Release(&buf);
+        return NULL;
+    }
+
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+    const char *mem_name = "pylibmspack:memoab";
+    struct memcab_system sys;
+    init_memcab_system(&sys, (const unsigned char *)buf.buf, (size_t)buf.len, mem_name);
+    struct msoab_decompressor *oab = oabd_create(&sys.sys);
+    if (!oab) {
+        Py_DECREF(out_bytes);
+        PyBuffer_Release(&buf);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+
+    int err = set_oab_decompbuf(oab, decompbuf);
+    if (err == MSPACK_ERR_OK) {
+        err = oab->decompress(oab, mem_name, out_path);
+    }
+    oabd_destroy(oab);
+    Py_DECREF(out_bytes);
+    PyBuffer_Release(&buf);
+    return PyLong_FromLong(err);
+}
+
+static PyObject *py_oab_decompress_incremental(PyObject *self, PyObject *args) {
+    PyObject *patch_obj;
+    PyObject *base_obj;
+    PyObject *out_obj;
+    PyObject *patch_bytes = NULL;
+    PyObject *base_bytes = NULL;
+    PyObject *out_bytes = NULL;
+    int decompbuf = 4096;
+    if (!PyArg_ParseTuple(args, "OOO|i", &patch_obj, &base_obj, &out_obj, &decompbuf)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(patch_obj, &patch_bytes)) {
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(base_obj, &base_bytes)) {
+        Py_DECREF(patch_bytes);
+        return NULL;
+    }
+    if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
+        Py_DECREF(patch_bytes);
+        Py_DECREF(base_bytes);
+        return NULL;
+    }
+
+    const char *patch_path = PyBytes_AS_STRING(patch_bytes);
+    const char *base_path = PyBytes_AS_STRING(base_bytes);
+    const char *out_path = PyBytes_AS_STRING(out_bytes);
+
+    struct memcab_system sys;
+    init_memcab_system(&sys, NULL, 0, NULL);
+    struct msoab_decompressor *oab = oabd_create(&sys.sys);
+    if (!oab) {
+        Py_DECREF(patch_bytes);
+        Py_DECREF(base_bytes);
+        Py_DECREF(out_bytes);
+        return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
+    }
+
+    int err = set_oab_decompbuf(oab, decompbuf);
+    if (err == MSPACK_ERR_OK) {
+        err = oab->decompress_incremental(oab, patch_path, base_path, out_path);
+    }
+    oabd_destroy(oab);
+    Py_DECREF(patch_bytes);
+    Py_DECREF(base_bytes);
+    Py_DECREF(out_bytes);
+    return PyLong_FromLong(err);
+}
+
 static PyMethodDef CabMethods[] = {
     {"list_files", py_cab_list, METH_VARARGS, "List files in a CAB"},
     {"list_files_bytes", py_cab_list_bytes, METH_VARARGS, "List files in a CAB from bytes"},
@@ -2044,6 +2309,11 @@ static PyMethodDef CabMethods[] = {
     {"kwaj_info_bytes", py_kwaj_info_bytes, METH_VARARGS, "Read KWAJ header info from bytes"},
     {"kwaj_extract", py_kwaj_extract, METH_VARARGS, "Extract KWAJ data"},
     {"kwaj_extract_bytes", py_kwaj_extract_bytes, METH_VARARGS, "Extract KWAJ data from bytes"},
+    {"hlp_decompress", py_hlp_decompress, METH_VARARGS, "Decompress a Microsoft Help LZSS stream"},
+    {"hlp_decompress_bytes", py_hlp_decompress_bytes, METH_VARARGS, "Decompress a Microsoft Help LZSS stream from bytes"},
+    {"oab_decompress", py_oab_decompress, METH_VARARGS, "Decompress a full OAB .LZX file"},
+    {"oab_decompress_bytes", py_oab_decompress_bytes, METH_VARARGS, "Decompress a full OAB .LZX file from bytes"},
+    {"oab_decompress_incremental", py_oab_decompress_incremental, METH_VARARGS, "Apply an incremental OAB .LZX patch"},
     {NULL, NULL, 0, NULL},
 };
 
@@ -2053,6 +2323,10 @@ static struct PyModuleDef cabmodule = {
     NULL,
     -1,
     CabMethods,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
 };
 
 PyMODINIT_FUNC PyInit__cab(void) {

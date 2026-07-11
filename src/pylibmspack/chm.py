@@ -13,7 +13,6 @@ from .errors import (
     ChmPathTraversalError,
 )
 
-
 _ERR_OK = getattr(_cab, "MSPACK_ERR_OK", 0)
 _ERR_DATAFORMAT = getattr(_cab, "MSPACK_ERR_DATAFORMAT", -1)
 _ERR_DECRUNCH = getattr(_cab, "MSPACK_ERR_DECRUNCH", -1)
@@ -174,7 +173,9 @@ class ChmArchive:
         _raise_for_err(err, "extract")
         return out_path
 
-    def extract_all(self, dest_dir: str, *, safe: bool = True, include_system: bool = True) -> list[str]:
+    def extract_all(
+        self, dest_dir: str, *, safe: bool = True, include_system: bool = True
+    ) -> list[str]:
         """Extract all members to disk and return output paths."""
         out_paths: list[str] = []
         for info in self.files(include_system=include_system):

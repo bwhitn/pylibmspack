@@ -4,7 +4,6 @@ import pytest
 
 from pylibmspack import KwajFile, KwajFormatError, KwajPathTraversalError
 
-
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 

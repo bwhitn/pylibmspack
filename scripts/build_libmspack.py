@@ -17,7 +17,13 @@ LIBMSPACK_URL = (
     "0.10.1-2build2/libmspack_0.10.1.orig.tar.xz"
 )
 LIBMSPACK_SHA256 = "850c57442b850bf1bc0fc4ea8880903ebf2bed063c3c80782ee4626fbcb0e67d"
-VENDORED_TARBALL = Path(__file__).resolve().parents[1] / "src" / "pylibmspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
+VENDORED_TARBALL = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "pylibmspack"
+    / "vendor"
+    / "libmspack_0.10.1.orig.tar.xz"
+)
 
 SOURCES = [
     "mspack/system.c",
@@ -67,20 +73,23 @@ def download(url: str, dest: Path, expected_sha256: str) -> None:
         raise RuntimeError(f"sha256 mismatch: {actual} != {expected_sha256}")
 
 
+def _source_root(dst: Path) -> Path:
+    entries = [p for p in dst.iterdir() if p.is_dir()]
+    if len(entries) != 1:
+        raise RuntimeError("unexpected libmspack archive layout")
+    return entries[0]
+
+
 def extract(tar_path: Path, dst: Path) -> Path:
-    if dst.exists():
-        return dst
+    if dst.exists() and any(dst.iterdir()):
+        return _source_root(dst)
     dst.mkdir(parents=True, exist_ok=True)
     with tarfile.open(tar_path, "r:xz") as tf:
         try:
             tf.extractall(dst, filter="data")
         except TypeError:
             tf.extractall(dst)
-    # Expect a single top-level folder
-    entries = [p for p in dst.iterdir() if p.is_dir()]
-    if len(entries) != 1:
-        raise RuntimeError("unexpected libmspack archive layout")
-    return entries[0]
+    return _source_root(dst)
 
 
 def build_unix(src_root: Path, out_dir: Path) -> Path:
@@ -91,6 +100,7 @@ def build_unix(src_root: Path, out_dir: Path) -> Path:
     archflags = os.environ.get("ARCHFLAGS", "")
     cppflags = os.environ.get("CPPFLAGS", "")
     import shlex
+
     cflag_list = []
     ldflag_list = []
     for flags in (cflags, archflags, cppflags):
@@ -161,6 +171,9 @@ def build_windows(src_root: Path, out_dir: Path) -> Path:
             b"    mspack_destroy_szdd_decompressor\r\n"
             b"    mspack_create_kwaj_decompressor\r\n"
             b"    mspack_destroy_kwaj_decompressor\r\n"
+            b"    mspack_create_oab_decompressor\r\n"
+            b"    mspack_destroy_oab_decompressor\r\n"
+            b"    lzss_decompress\r\n"
         )
     cmd = [
         "cl",

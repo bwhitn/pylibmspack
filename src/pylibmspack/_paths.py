@@ -4,7 +4,6 @@ import os
 import posixpath
 import re
 
-
 _DRIVE_RE = re.compile(r"^[A-Za-z]:")
 
 

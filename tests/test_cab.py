@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -7,6 +6,7 @@ from pylibmspack import CabArchive, CabFormatError, CabPathTraversalError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
+
 
 def _norm_newlines(data: bytes) -> bytes:
     return data.replace(b"\r\n", b"\n")
@@ -53,9 +53,15 @@ def test_list_files():
 
 def test_read_member():
     cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
-    assert _norm_newlines(cab.read("mszip.txt")) == _norm_newlines((EXPECTED / "mszip.txt").read_bytes())
-    assert _norm_newlines(cab.read("lzx.txt")) == _norm_newlines((EXPECTED / "lzx.txt").read_bytes())
-    assert _norm_newlines(cab.read("qtm.txt")) == _norm_newlines((EXPECTED / "qtm.txt").read_bytes())
+    assert _norm_newlines(cab.read("mszip.txt")) == _norm_newlines(
+        (EXPECTED / "mszip.txt").read_bytes()
+    )
+    assert _norm_newlines(cab.read("lzx.txt")) == _norm_newlines(
+        (EXPECTED / "lzx.txt").read_bytes()
+    )
+    assert _norm_newlines(cab.read("qtm.txt")) == _norm_newlines(
+        (EXPECTED / "qtm.txt").read_bytes()
+    )
 
 
 def test_safe_extract_blocks_traversal(tmp_path):
@@ -68,15 +74,23 @@ def test_extract_all(tmp_path):
     cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
     out_paths = cab.extract_all(str(tmp_path))
     assert len(out_paths) == 3
-    assert _norm_newlines((tmp_path / "mszip.txt").read_bytes()) == _norm_newlines((EXPECTED / "mszip.txt").read_bytes())
-    assert _norm_newlines((tmp_path / "lzx.txt").read_bytes()) == _norm_newlines((EXPECTED / "lzx.txt").read_bytes())
-    assert _norm_newlines((tmp_path / "qtm.txt").read_bytes()) == _norm_newlines((EXPECTED / "qtm.txt").read_bytes())
+    assert _norm_newlines((tmp_path / "mszip.txt").read_bytes()) == _norm_newlines(
+        (EXPECTED / "mszip.txt").read_bytes()
+    )
+    assert _norm_newlines((tmp_path / "lzx.txt").read_bytes()) == _norm_newlines(
+        (EXPECTED / "lzx.txt").read_bytes()
+    )
+    assert _norm_newlines((tmp_path / "qtm.txt").read_bytes()) == _norm_newlines(
+        (EXPECTED / "qtm.txt").read_bytes()
+    )
 
 
 def test_from_bytes_and_info():
     data = (FIXTURES / "small_mszip.cab").read_bytes()
     cab = CabArchive.from_bytes(data)
-    assert _norm_newlines(cab.read("mszip.txt")) == _norm_newlines((EXPECTED / "mszip.txt").read_bytes())
+    assert _norm_newlines(cab.read("mszip.txt")) == _norm_newlines(
+        (EXPECTED / "mszip.txt").read_bytes()
+    )
     info = cab.info()
     assert info["files_count"] == 3
     files = cab.files()
@@ -96,7 +110,7 @@ def test_cab_extract_raw_allows_parent(tmp_path):
     assert idx != -1
     replacement = b"..\\cxxx\0"
     assert len(replacement) == len(needle)
-    patched = data[:idx] + replacement + data[idx + len(needle):]
+    patched = data[:idx] + replacement + data[idx + len(needle) :]
 
     cab = CabArchive.from_bytes(patched)
     dest = tmp_path / "a" / "b"
