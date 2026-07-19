@@ -62,6 +62,31 @@ def test_chm_read_and_extract(tmp_path):
     assert Path(out_path).read_bytes() == data
 
 
+def test_chm_extract_respects_max_size(tmp_path):
+    chm = ChmArchive(str(SAMPLE_CHM))
+    files = [f for f in chm.files(include_system=False) if f["size"] > 1]
+    smallest = min(files, key=lambda f: f["size"])
+
+    with pytest.raises(ChmError, match="max_size"):
+        chm.extract(smallest["name"], str(tmp_path), max_size=1)
+
+
+def test_chm_extract_all_respects_max_files(tmp_path):
+    chm = ChmArchive(str(SAMPLE_CHM))
+    if len(chm.files(include_system=False)) < 2:
+        pytest.skip("sample CHM has fewer than two user files")
+
+    with pytest.raises(ChmError, match="max_files"):
+        chm.extract_all(str(tmp_path), include_system=False, max_files=1)
+
+
+def test_chm_extract_all_respects_max_total_size(tmp_path):
+    chm = ChmArchive(str(SAMPLE_CHM))
+
+    with pytest.raises(ChmError, match="max_total_size"):
+        chm.extract_all(str(tmp_path), include_system=False, max_total_size=1)
+
+
 def test_chm_from_bytes():
     data = SAMPLE_CHM.read_bytes()
     chm = ChmArchive.from_bytes(data)

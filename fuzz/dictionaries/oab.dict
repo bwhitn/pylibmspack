@@ -1,0 +1,5 @@
+version3="\x03\x00\x00\x00"
+one_block="\x01\x00\x00\x00"
+oab_ext=".lzx"
+oab_payload="OAB"
+zero_crc="\x00\x00\x00\x00"

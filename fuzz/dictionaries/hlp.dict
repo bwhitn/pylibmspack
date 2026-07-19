@@ -1,0 +1,5 @@
+hlp_container_magic="\x3f\x5f\x03\x00"
+literal_control="\x00"
+backref_control="\xff"
+help_ext=".hlp"
+help_payload="MS Help"

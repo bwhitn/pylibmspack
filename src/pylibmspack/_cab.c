@@ -121,6 +121,8 @@
 #ifndef HLP_INPUT_SIZE
 #define HLP_INPUT_SIZE 2048
 #endif
+#define PYLIBMSPACK_ERR_OUTPUT_LIMIT 10001
+#define PYLIBMSPACK_WRITE_LIMIT_NONE UINT64_MAX
 
 static PyObject *decode_filename(const char *name) {
     if (!name) {
@@ -294,10 +296,12 @@ struct memcab_system;
 
 struct memcab_file {
     int is_mem;
+    int writable;
     const unsigned char *data;
     size_t size;
     size_t pos;
     FILE *fp;
+    struct memcab_system *sys;
 };
 
 struct memcab_system {
@@ -305,6 +309,8 @@ struct memcab_system {
     const unsigned char *data;
     size_t size;
     const char *mem_name;
+    uint64_t write_limit;
+    int write_limit_exceeded;
 };
 
 static struct mspack_file *mem_open(struct mspack_system *self, const char *filename, int mode) {
@@ -312,6 +318,7 @@ static struct mspack_file *mem_open(struct mspack_system *self, const char *file
     struct memcab_file *mf = (struct memcab_file *)malloc(sizeof(struct memcab_file));
     if (!mf) return NULL;
     memset(mf, 0, sizeof(*mf));
+    mf->sys = msys;
 
     if (filename && msys->mem_name && strcmp(filename, msys->mem_name) == 0) {
         if (mode != MSPACK_SYS_OPEN_READ) {
@@ -350,6 +357,7 @@ static struct mspack_file *mem_open(struct mspack_system *self, const char *file
         return NULL;
     }
     mf->is_mem = 0;
+    mf->writable = mode != MSPACK_SYS_OPEN_READ;
     return (struct mspack_file *)mf;
 }
 
@@ -380,11 +388,31 @@ static int mem_read(struct mspack_file *file, void *buffer, int bytes) {
 
 static int mem_write(struct mspack_file *file, void *buffer, int bytes) {
     struct memcab_file *mf = (struct memcab_file *)file;
+    off_t current;
+    uint64_t pos;
+    size_t written;
     if (!mf || bytes <= 0) return 0;
     if (mf->is_mem) {
         return -1;
     }
-    return (int)fwrite(buffer, 1, (size_t)bytes, mf->fp);
+    if (mf->sys && mf->sys->write_limit != PYLIBMSPACK_WRITE_LIMIT_NONE) {
+#if defined(_WIN32)
+        current = (off_t)_ftelli64(mf->fp);
+#else
+        current = (off_t)ftello(mf->fp);
+#endif
+        if (current < 0) {
+            return -1;
+        }
+        pos = (uint64_t)current;
+        if (pos > mf->sys->write_limit ||
+            (uint64_t)bytes > mf->sys->write_limit - pos) {
+            mf->sys->write_limit_exceeded = 1;
+            return -1;
+        }
+    }
+    written = fwrite(buffer, 1, (size_t)bytes, mf->fp);
+    return (int)written;
 }
 
 static int mem_seek(struct mspack_file *file, off_t offset, int mode) {
@@ -401,9 +429,25 @@ static int mem_seek(struct mspack_file *file, off_t offset, int mode) {
         return 0;
     }
 #if defined(_WIN32)
-    return _fseeki64(mf->fp, offset, mode) == 0 ? 0 : -1;
+    if (_fseeki64(mf->fp, offset, mode) != 0) return -1;
+    if (mf->writable && mf->sys && mf->sys->write_limit != PYLIBMSPACK_WRITE_LIMIT_NONE) {
+        off_t pos = (off_t)_ftelli64(mf->fp);
+        if (pos < 0 || (uint64_t)pos > mf->sys->write_limit) {
+            mf->sys->write_limit_exceeded = 1;
+            return -1;
+        }
+    }
+    return 0;
 #else
-    return fseeko(mf->fp, offset, mode) == 0 ? 0 : -1;
+    if (fseeko(mf->fp, offset, mode) != 0) return -1;
+    if (mf->writable && mf->sys && mf->sys->write_limit != PYLIBMSPACK_WRITE_LIMIT_NONE) {
+        off_t pos = (off_t)ftello(mf->fp);
+        if (pos < 0 || (uint64_t)pos > mf->sys->write_limit) {
+            mf->sys->write_limit_exceeded = 1;
+            return -1;
+        }
+    }
+    return 0;
 #endif
 }
 
@@ -425,7 +469,7 @@ static void mem_message(struct mspack_file *file, const char *format, ...) {
 
 static void *mem_alloc(struct mspack_system *self, size_t bytes) {
     (void)self;
-    return malloc(bytes);
+    return calloc(1, bytes);
 }
 
 static void mem_free(void *ptr) {
@@ -436,16 +480,18 @@ static void mem_copy(void *src, void *dest, size_t bytes) {
     memcpy(dest, src, bytes);
 }
 
-static void init_memcab_system(
+static void init_memcab_system_limited(
     struct memcab_system *sys,
     const unsigned char *data,
     size_t size,
-    const char *mem_name
+    const char *mem_name,
+    uint64_t write_limit
 ) {
     memset(sys, 0, sizeof(*sys));
     sys->data = data;
     sys->size = size;
     sys->mem_name = mem_name;
+    sys->write_limit = write_limit;
     sys->sys.open = mem_open;
     sys->sys.close = mem_close;
     sys->sys.read = mem_read;
@@ -457,6 +503,13 @@ static void init_memcab_system(
     sys->sys.free = mem_free;
     sys->sys.copy = mem_copy;
     sys->sys.null_ptr = NULL;
+}
+
+static int output_limit_err(struct memcab_system *sys, int err) {
+    if (sys && sys->write_limit_exceeded) {
+        return PYLIBMSPACK_ERR_OUTPUT_LIMIT;
+    }
+    return err;
 }
 
 static int dict_set_owned(PyObject *dict, const char *key, PyObject *value) {
@@ -592,7 +645,10 @@ static PyObject *py_cab_list(PyObject *self, PyObject *args) {
     }
     path = PyBytes_AS_STRING(path_bytes);
 
-    struct mscab_decompressor *cabd = cabd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1013,8 +1069,9 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     PyObject *path_bytes = NULL;
     PyObject *name_bytes = NULL;
     PyObject *out_bytes = NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
 
-    if (!PyArg_ParseTuple(args, "OOO", &path_obj, &name_obj, &out_obj)) {
+    if (!PyArg_ParseTuple(args, "OOO|K", &path_obj, &name_obj, &out_obj, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(path_obj, &path_bytes)) {
@@ -1035,7 +1092,10 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     const char *name = PyBytes_AS_STRING(name_bytes);
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
-    struct mscab_decompressor *cabd = cabd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
+
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         Py_DECREF(path_bytes);
         Py_DECREF(name_bytes);
@@ -1065,6 +1125,7 @@ static PyObject *py_cab_extract(PyObject *self, PyObject *args) {
     if (file) {
         err = cabd->extract(cabd, file, out_path);
     }
+    err = output_limit_err(&sys, err);
 
     cabd->close(cabd, cab);
     cabd_destroy(cabd);
@@ -1081,8 +1142,9 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     PyObject *out_obj = NULL;
     PyObject *name_bytes = NULL;
     PyObject *out_bytes = NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
 
-    if (!PyArg_ParseTuple(args, "y*OO", &buf, &name_obj, &out_obj)) {
+    if (!PyArg_ParseTuple(args, "y*OO|K", &buf, &name_obj, &out_obj, &write_limit)) {
         return NULL;
     }
     name_bytes = PyUnicode_AsEncodedString(name_obj, "utf-8", "surrogateescape");
@@ -1101,21 +1163,13 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
 
     const char *mem_name = "pylibmspack:memcab";
     struct memcab_system sys;
-    memset(&sys, 0, sizeof(sys));
-    sys.data = (const unsigned char *)buf.buf;
-    sys.size = (size_t)buf.len;
-    sys.mem_name = mem_name;
-    sys.sys.open = mem_open;
-    sys.sys.close = mem_close;
-    sys.sys.read = mem_read;
-    sys.sys.write = mem_write;
-    sys.sys.seek = mem_seek;
-    sys.sys.tell = mem_tell;
-    sys.sys.message = mem_message;
-    sys.sys.alloc = mem_alloc;
-    sys.sys.free = mem_free;
-    sys.sys.copy = mem_copy;
-    sys.sys.null_ptr = NULL;
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
 
     struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
@@ -1147,6 +1201,7 @@ static PyObject *py_cab_extract_bytes(PyObject *self, PyObject *args) {
     if (file) {
         err = cabd->extract(cabd, file, out_path);
     }
+    err = output_limit_err(&sys, err);
 
     cabd->close(cabd, cab);
     cabd_destroy(cabd);
@@ -1170,7 +1225,10 @@ static PyObject *py_cab_info(PyObject *self, PyObject *args) {
     }
     path = PyBytes_AS_STRING(path_bytes);
 
-    struct mscab_decompressor *cabd = cabd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct mscab_decompressor *cabd = cabd_create(&sys.sys);
     if (!cabd) {
         Py_DECREF(path_bytes);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1353,7 +1411,10 @@ static PyObject *py_chm_list(PyObject *self, PyObject *args) {
     const char *path = NULL;
     if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
 
-    struct mschm_decompressor *chmd = chmd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
     if (!chmd) {
         Py_INCREF(Py_None);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1448,7 +1509,10 @@ static PyObject *py_chm_info(PyObject *self, PyObject *args) {
     const char *path = NULL;
     if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
 
-    struct mschm_decompressor *chmd = chmd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
     if (!chmd) {
         Py_INCREF(Py_None);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1559,9 +1623,13 @@ static PyObject *py_chm_extract(PyObject *self, PyObject *args) {
     const char *path = NULL;
     const char *name = NULL;
     const char *out_path = NULL;
-    if (!PyArg_ParseTuple(args, "sss", &path, &name, &out_path)) return NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "sss|K", &path, &name, &out_path, &write_limit)) return NULL;
 
-    struct mschm_decompressor *chmd = chmd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
+
+    struct mschm_decompressor *chmd = chmd_create(&sys.sys);
     if (!chmd) {
         return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
     }
@@ -1583,6 +1651,7 @@ static PyObject *py_chm_extract(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = chmd->last_error(chmd);
     }
+    err = output_limit_err(&sys, err);
     chmd->close(chmd, chm);
     chmd_destroy(chmd);
     return PyLong_FromLong(err);
@@ -1594,8 +1663,9 @@ static PyObject *py_chm_extract_bytes(PyObject *self, PyObject *args) {
     PyObject *out_obj = NULL;
     PyObject *name_bytes = NULL;
     PyObject *out_bytes = NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
 
-    if (!PyArg_ParseTuple(args, "y*OO", &buf, &name_obj, &out_obj)) {
+    if (!PyArg_ParseTuple(args, "y*OO|K", &buf, &name_obj, &out_obj, &write_limit)) {
         return NULL;
     }
     name_bytes = PyUnicode_AsEncodedString(name_obj, "utf-8", "surrogateescape");
@@ -1614,21 +1684,13 @@ static PyObject *py_chm_extract_bytes(PyObject *self, PyObject *args) {
 
     const char *mem_name = "pylibmspack:memchm";
     struct memcab_system sys;
-    memset(&sys, 0, sizeof(sys));
-    sys.data = (const unsigned char *)buf.buf;
-    sys.size = (size_t)buf.len;
-    sys.mem_name = mem_name;
-    sys.sys.open = mem_open;
-    sys.sys.close = mem_close;
-    sys.sys.read = mem_read;
-    sys.sys.write = mem_write;
-    sys.sys.seek = mem_seek;
-    sys.sys.tell = mem_tell;
-    sys.sys.message = mem_message;
-    sys.sys.alloc = mem_alloc;
-    sys.sys.free = mem_free;
-    sys.sys.copy = mem_copy;
-    sys.sys.null_ptr = NULL;
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
 
     struct mschm_decompressor *chmd = chmd_create(&sys.sys);
     if (!chmd) {
@@ -1661,6 +1723,7 @@ static PyObject *py_chm_extract_bytes(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = chmd->last_error(chmd);
     }
+    err = output_limit_err(&sys, err);
     chmd->close(chmd, chm);
     chmd_destroy(chmd);
     Py_DECREF(name_bytes);
@@ -1684,7 +1747,10 @@ static PyObject *py_szdd_info(PyObject *self, PyObject *args) {
     const char *path = NULL;
     if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
 
-    struct msszdd_decompressor *szdd = szddd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct msszdd_decompressor *szdd = szddd_create(&sys.sys);
     if (!szdd) {
         Py_INCREF(Py_None);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1784,9 +1850,13 @@ error:
 static PyObject *py_szdd_extract(PyObject *self, PyObject *args) {
     const char *path = NULL;
     const char *out_path = NULL;
-    if (!PyArg_ParseTuple(args, "ss", &path, &out_path)) return NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "ss|K", &path, &out_path, &write_limit)) return NULL;
 
-    struct msszdd_decompressor *szdd = szddd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
+
+    struct msszdd_decompressor *szdd = szddd_create(&sys.sys);
     if (!szdd) {
         return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
     }
@@ -1801,6 +1871,7 @@ static PyObject *py_szdd_extract(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = szdd->last_error(szdd);
     }
+    err = output_limit_err(&sys, err);
     szdd->close(szdd, hdr);
     szddd_destroy(szdd);
     return PyLong_FromLong(err);
@@ -1810,7 +1881,8 @@ static PyObject *py_szdd_extract_bytes(PyObject *self, PyObject *args) {
     Py_buffer buf;
     PyObject *out_obj = NULL;
     PyObject *out_bytes = NULL;
-    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) return NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "y*O|K", &buf, &out_obj, &write_limit)) return NULL;
     if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
         PyBuffer_Release(&buf);
         return NULL;
@@ -1819,21 +1891,13 @@ static PyObject *py_szdd_extract_bytes(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
     const char *mem_name = "pylibmspack:memszdd";
     struct memcab_system sys;
-    memset(&sys, 0, sizeof(sys));
-    sys.data = (const unsigned char *)buf.buf;
-    sys.size = (size_t)buf.len;
-    sys.mem_name = mem_name;
-    sys.sys.open = mem_open;
-    sys.sys.close = mem_close;
-    sys.sys.read = mem_read;
-    sys.sys.write = mem_write;
-    sys.sys.seek = mem_seek;
-    sys.sys.tell = mem_tell;
-    sys.sys.message = mem_message;
-    sys.sys.alloc = mem_alloc;
-    sys.sys.free = mem_free;
-    sys.sys.copy = mem_copy;
-    sys.sys.null_ptr = NULL;
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
 
     struct msszdd_decompressor *szdd = szddd_create(&sys.sys);
     if (!szdd) {
@@ -1854,6 +1918,7 @@ static PyObject *py_szdd_extract_bytes(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = szdd->last_error(szdd);
     }
+    err = output_limit_err(&sys, err);
     szdd->close(szdd, hdr);
     szddd_destroy(szdd);
     Py_DECREF(out_bytes);
@@ -1922,7 +1987,10 @@ static PyObject *py_kwaj_info(PyObject *self, PyObject *args) {
     const char *path = NULL;
     if (!PyArg_ParseTuple(args, "s", &path)) return NULL;
 
-    struct mskwaj_decompressor *kwaj = kwajd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, PYLIBMSPACK_WRITE_LIMIT_NONE);
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(&sys.sys);
     if (!kwaj) {
         Py_INCREF(Py_None);
         return Py_BuildValue("Oi", Py_None, MSPACK_ERR_NOMEMORY);
@@ -1999,9 +2067,13 @@ static PyObject *py_kwaj_info_bytes(PyObject *self, PyObject *args) {
 static PyObject *py_kwaj_extract(PyObject *self, PyObject *args) {
     const char *path = NULL;
     const char *out_path = NULL;
-    if (!PyArg_ParseTuple(args, "ss", &path, &out_path)) return NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "ss|K", &path, &out_path, &write_limit)) return NULL;
 
-    struct mskwaj_decompressor *kwaj = kwajd_create(NULL);
+    struct memcab_system sys;
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
+
+    struct mskwaj_decompressor *kwaj = kwajd_create(&sys.sys);
     if (!kwaj) {
         return PyLong_FromLong(MSPACK_ERR_NOMEMORY);
     }
@@ -2016,6 +2088,7 @@ static PyObject *py_kwaj_extract(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = kwaj->last_error(kwaj);
     }
+    err = output_limit_err(&sys, err);
     kwaj->close(kwaj, hdr);
     kwajd_destroy(kwaj);
     return PyLong_FromLong(err);
@@ -2025,7 +2098,8 @@ static PyObject *py_kwaj_extract_bytes(PyObject *self, PyObject *args) {
     Py_buffer buf;
     PyObject *out_obj = NULL;
     PyObject *out_bytes = NULL;
-    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) return NULL;
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "y*O|K", &buf, &out_obj, &write_limit)) return NULL;
     if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
         PyBuffer_Release(&buf);
         return NULL;
@@ -2034,21 +2108,13 @@ static PyObject *py_kwaj_extract_bytes(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
     const char *mem_name = "pylibmspack:memkwaj";
     struct memcab_system sys;
-    memset(&sys, 0, sizeof(sys));
-    sys.data = (const unsigned char *)buf.buf;
-    sys.size = (size_t)buf.len;
-    sys.mem_name = mem_name;
-    sys.sys.open = mem_open;
-    sys.sys.close = mem_close;
-    sys.sys.read = mem_read;
-    sys.sys.write = mem_write;
-    sys.sys.seek = mem_seek;
-    sys.sys.tell = mem_tell;
-    sys.sys.message = mem_message;
-    sys.sys.alloc = mem_alloc;
-    sys.sys.free = mem_free;
-    sys.sys.copy = mem_copy;
-    sys.sys.null_ptr = NULL;
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
 
     struct mskwaj_decompressor *kwaj = kwajd_create(&sys.sys);
     if (!kwaj) {
@@ -2069,6 +2135,7 @@ static PyObject *py_kwaj_extract_bytes(PyObject *self, PyObject *args) {
     if (err != MSPACK_ERR_OK) {
         err = kwaj->last_error(kwaj);
     }
+    err = output_limit_err(&sys, err);
     kwaj->close(kwaj, hdr);
     kwajd_destroy(kwaj);
     Py_DECREF(out_bytes);
@@ -2081,7 +2148,8 @@ static PyObject *py_hlp_decompress(PyObject *self, PyObject *args) {
     PyObject *out_obj;
     PyObject *path_bytes = NULL;
     PyObject *out_bytes = NULL;
-    if (!PyArg_ParseTuple(args, "OO", &path_obj, &out_obj)) {
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "OO|K", &path_obj, &out_obj, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(path_obj, &path_bytes)) {
@@ -2096,7 +2164,7 @@ static PyObject *py_hlp_decompress(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
     struct memcab_system sys;
-    init_memcab_system(&sys, NULL, 0, NULL);
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
 
     struct mspack_file *input = sys.sys.open(&sys.sys, path, MSPACK_SYS_OPEN_READ);
     if (!input) {
@@ -2113,6 +2181,7 @@ static PyObject *py_hlp_decompress(PyObject *self, PyObject *args) {
     }
 
     int err = lzss_decompress(&sys.sys, input, output, HLP_INPUT_SIZE, LZSS_MODE_MSHELP);
+    err = output_limit_err(&sys, err);
     sys.sys.close(output);
     sys.sys.close(input);
     Py_DECREF(path_bytes);
@@ -2124,7 +2193,8 @@ static PyObject *py_hlp_decompress_bytes(PyObject *self, PyObject *args) {
     Py_buffer buf;
     PyObject *out_obj;
     PyObject *out_bytes = NULL;
-    if (!PyArg_ParseTuple(args, "y*O", &buf, &out_obj)) {
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "y*O|K", &buf, &out_obj, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
@@ -2135,7 +2205,13 @@ static PyObject *py_hlp_decompress_bytes(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
     const char *mem_name = "pylibmspack:memhlp";
     struct memcab_system sys;
-    init_memcab_system(&sys, (const unsigned char *)buf.buf, (size_t)buf.len, mem_name);
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
 
     struct mspack_file *input = sys.sys.open(&sys.sys, mem_name, MSPACK_SYS_OPEN_READ);
     if (!input) {
@@ -2152,6 +2228,7 @@ static PyObject *py_hlp_decompress_bytes(PyObject *self, PyObject *args) {
     }
 
     int err = lzss_decompress(&sys.sys, input, output, HLP_INPUT_SIZE, LZSS_MODE_MSHELP);
+    err = output_limit_err(&sys, err);
     sys.sys.close(output);
     sys.sys.close(input);
     Py_DECREF(out_bytes);
@@ -2172,7 +2249,8 @@ static PyObject *py_oab_decompress(PyObject *self, PyObject *args) {
     PyObject *path_bytes = NULL;
     PyObject *out_bytes = NULL;
     int decompbuf = 4096;
-    if (!PyArg_ParseTuple(args, "OO|i", &path_obj, &out_obj, &decompbuf)) {
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "OO|iK", &path_obj, &out_obj, &decompbuf, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(path_obj, &path_bytes)) {
@@ -2187,7 +2265,7 @@ static PyObject *py_oab_decompress(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
     struct memcab_system sys;
-    init_memcab_system(&sys, NULL, 0, NULL);
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
     struct msoab_decompressor *oab = oabd_create(&sys.sys);
     if (!oab) {
         Py_DECREF(path_bytes);
@@ -2199,6 +2277,7 @@ static PyObject *py_oab_decompress(PyObject *self, PyObject *args) {
     if (err == MSPACK_ERR_OK) {
         err = oab->decompress(oab, path, out_path);
     }
+    err = output_limit_err(&sys, err);
     oabd_destroy(oab);
     Py_DECREF(path_bytes);
     Py_DECREF(out_bytes);
@@ -2210,7 +2289,8 @@ static PyObject *py_oab_decompress_bytes(PyObject *self, PyObject *args) {
     PyObject *out_obj;
     PyObject *out_bytes = NULL;
     int decompbuf = 4096;
-    if (!PyArg_ParseTuple(args, "y*O|i", &buf, &out_obj, &decompbuf)) {
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "y*O|iK", &buf, &out_obj, &decompbuf, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(out_obj, &out_bytes)) {
@@ -2221,7 +2301,13 @@ static PyObject *py_oab_decompress_bytes(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
     const char *mem_name = "pylibmspack:memoab";
     struct memcab_system sys;
-    init_memcab_system(&sys, (const unsigned char *)buf.buf, (size_t)buf.len, mem_name);
+    init_memcab_system_limited(
+        &sys,
+        (const unsigned char *)buf.buf,
+        (size_t)buf.len,
+        mem_name,
+        (uint64_t)write_limit
+    );
     struct msoab_decompressor *oab = oabd_create(&sys.sys);
     if (!oab) {
         Py_DECREF(out_bytes);
@@ -2233,6 +2319,7 @@ static PyObject *py_oab_decompress_bytes(PyObject *self, PyObject *args) {
     if (err == MSPACK_ERR_OK) {
         err = oab->decompress(oab, mem_name, out_path);
     }
+    err = output_limit_err(&sys, err);
     oabd_destroy(oab);
     Py_DECREF(out_bytes);
     PyBuffer_Release(&buf);
@@ -2247,7 +2334,8 @@ static PyObject *py_oab_decompress_incremental(PyObject *self, PyObject *args) {
     PyObject *base_bytes = NULL;
     PyObject *out_bytes = NULL;
     int decompbuf = 4096;
-    if (!PyArg_ParseTuple(args, "OOO|i", &patch_obj, &base_obj, &out_obj, &decompbuf)) {
+    unsigned long long write_limit = PYLIBMSPACK_WRITE_LIMIT_NONE;
+    if (!PyArg_ParseTuple(args, "OOO|iK", &patch_obj, &base_obj, &out_obj, &decompbuf, &write_limit)) {
         return NULL;
     }
     if (!PyUnicode_FSConverter(patch_obj, &patch_bytes)) {
@@ -2268,7 +2356,7 @@ static PyObject *py_oab_decompress_incremental(PyObject *self, PyObject *args) {
     const char *out_path = PyBytes_AS_STRING(out_bytes);
 
     struct memcab_system sys;
-    init_memcab_system(&sys, NULL, 0, NULL);
+    init_memcab_system_limited(&sys, NULL, 0, NULL, (uint64_t)write_limit);
     struct msoab_decompressor *oab = oabd_create(&sys.sys);
     if (!oab) {
         Py_DECREF(patch_bytes);
@@ -2281,6 +2369,7 @@ static PyObject *py_oab_decompress_incremental(PyObject *self, PyObject *args) {
     if (err == MSPACK_ERR_OK) {
         err = oab->decompress_incremental(oab, patch_path, base_path, out_path);
     }
+    err = output_limit_err(&sys, err);
     oabd_destroy(oab);
     Py_DECREF(patch_bytes);
     Py_DECREF(base_bytes);
@@ -2395,5 +2484,6 @@ PyMODINIT_FUNC PyInit__cab(void) {
     PyModule_AddIntConstant(m, "MSPACK_ERR_NOMEMORY", MSPACK_ERR_NOMEMORY);
     PyModule_AddIntConstant(m, "MSPACK_ERR_SIGNATURE", MSPACK_ERR_SIGNATURE);
     PyModule_AddIntConstant(m, "MSPACK_ERR_CHECKSUM", MSPACK_ERR_CHECKSUM);
+    PyModule_AddIntConstant(m, "PYLIBMSPACK_ERR_OUTPUT_LIMIT", PYLIBMSPACK_ERR_OUTPUT_LIMIT);
     return m;
 }

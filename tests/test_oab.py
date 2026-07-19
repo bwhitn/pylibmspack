@@ -52,6 +52,13 @@ def test_oab_max_size():
         oab.read(max_size=1)
 
 
+def test_oab_extract_respects_max_size(tmp_path):
+    oab = OabFile.from_bytes(_full_oab(b"too large"))
+
+    with pytest.raises(OabError, match="max_size"):
+        oab.extract(str(tmp_path), out_name="address-book.oab", max_size=1)
+
+
 def test_oab_invalid_decompbuf():
     oab = OabFile.from_bytes(_full_oab(b"payload"))
 

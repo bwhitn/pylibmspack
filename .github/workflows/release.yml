@@ -20,16 +20,16 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup QEMU
         if: runner.os == 'Linux'
         uses: docker/setup-qemu-action@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Verify vendored libmspack tarball
         run: >
-          python -c "from pathlib import Path; path=Path('src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz');
+          python -c "from pathlib import Path; path=Path('src/pylibmspack/vendor/libmspack_0.11.orig.tar.gz');
           (path.exists() or (_ for _ in ()).throw(SystemExit(f'Missing vendored tarball: {path}')));
           print(f'Found {path}')"
       - name: Install build tools
@@ -58,11 +58,11 @@ jobs:
           - os: windows-latest
             win_arch: ARM64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup QEMU
         if: runner.os == 'Linux' && matrix.linux_arch == 'aarch64'
         uses: docker/setup-qemu-action@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Setup MSVC
@@ -94,7 +94,7 @@ jobs:
     outputs:
       release_tag: ${{ steps.resolve-tag.outputs.release_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Resolve tag
         id: resolve-tag
         shell: bash

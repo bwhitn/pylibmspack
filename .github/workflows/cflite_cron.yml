@@ -1,0 +1,32 @@
+name: ClusterFuzzLite Corpus Tasks
+
+on:
+  schedule:
+    - cron: "19 8 * * 1"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  prune:
+    name: Corpus Pruning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: c++
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - name: Prune corpus
+        id: prune
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: prune
+          sanitizer: address
+          output-sarif: true
+          parallel-fuzzing: true

@@ -5,7 +5,13 @@ import tempfile
 from typing import Optional, TypedDict
 
 from . import _cab
-from ._paths import ensure_parent, safe_join, unsafe_join
+from ._paths import (
+    ensure_parent,
+    ensure_safe_output_path,
+    remove_partial_output,
+    safe_join,
+    unsafe_join,
+)
 from .errors import (
     SzddDecompressionError,
     SzddError,
@@ -20,6 +26,8 @@ _ERR_BADCOMP = getattr(_cab, "MSPACK_ERR_BADCOMP", -1)
 _ERR_SIGNATURE = getattr(_cab, "MSPACK_ERR_SIGNATURE", -1)
 _ERR_CHECKSUM = getattr(_cab, "MSPACK_ERR_CHECKSUM", -1)
 _ERR_READ = getattr(_cab, "MSPACK_ERR_READ", -1)
+_ERR_OUTPUT_LIMIT = getattr(_cab, "PYLIBMSPACK_ERR_OUTPUT_LIMIT", -1)
+_DEFAULT_MAX_SIZE = 256 * 1024 * 1024
 
 
 def _raise_for_err(err: int, context: str) -> None:
@@ -29,6 +37,8 @@ def _raise_for_err(err: int, context: str) -> None:
         raise SzddFormatError(f"{context} failed: libmspack error {err}")
     if err == _ERR_DECRUNCH:
         raise SzddDecompressionError(f"{context} failed: libmspack error {err}")
+    if err == _ERR_OUTPUT_LIMIT:
+        raise SzddError(f"{context} failed: output exceeds max_size")
     raise SzddError(f"{context} failed: libmspack error {err}")
 
 
@@ -45,6 +55,13 @@ def _unsafe_join(dest_dir: str, name: str) -> str:
 
 def _ensure_parent(path: str) -> None:
     ensure_parent(path)
+
+
+def _ensure_safe_output(dest_dir: str, path: str) -> None:
+    try:
+        ensure_safe_output_path(dest_dir, path)
+    except ValueError as exc:
+        raise SzddPathTraversalError(str(exc)) from exc
 
 
 def _missing_char_str(value: int) -> str:
@@ -120,7 +137,7 @@ class SzddFile:
         """Return the default output filename based on the SZDD header."""
         return self.info()["suggested_name"]
 
-    def read(self, *, max_size: int = 256 * 1024 * 1024) -> bytes:
+    def read(self, *, max_size: int = _DEFAULT_MAX_SIZE) -> bytes:
         """Decompress and return file contents."""
         if max_size <= 0:
             raise ValueError("max_size must be positive")
@@ -131,9 +148,9 @@ class SzddFile:
             out_path = _safe_join(tmp, out_name)
             _ensure_parent(out_path)
             if self._data is not None:
-                err = _cab.szdd_extract_bytes(self._data, out_path)
+                err = _cab.szdd_extract_bytes(self._data, out_path, max_size)
             else:
-                err = _cab.szdd_extract(self.path, out_path)
+                err = _cab.szdd_extract(self.path, out_path, max_size)
             _raise_for_err(err, "extract")
             size = os.path.getsize(out_path)
             if size > max_size:
@@ -147,20 +164,36 @@ class SzddFile:
         *,
         safe: bool = True,
         out_name: Optional[str] = None,
+        max_size: int = _DEFAULT_MAX_SIZE,
     ) -> str:
         """Decompress to disk and return the output path."""
+        if max_size <= 0:
+            raise ValueError("max_size must be positive")
         name = out_name or self.suggested_name()
         if not name:
             raise SzddError("output name is required")
         out_path = _safe_join(dest_dir, name) if safe else _unsafe_join(dest_dir, name)
         _ensure_parent(out_path)
+        if safe:
+            _ensure_safe_output(dest_dir, out_path)
         if self._data is not None:
-            err = _cab.szdd_extract_bytes(self._data, out_path)
+            err = _cab.szdd_extract_bytes(self._data, out_path, max_size)
         else:
-            err = _cab.szdd_extract(self.path, out_path)
-        _raise_for_err(err, "extract")
+            err = _cab.szdd_extract(self.path, out_path, max_size)
+        try:
+            _raise_for_err(err, "extract")
+        except Exception:
+            if safe:
+                remove_partial_output(out_path)
+            raise
         return out_path
 
-    def extract_raw(self, dest_dir: str, *, out_name: Optional[str] = None) -> str:
+    def extract_raw(
+        self,
+        dest_dir: str,
+        *,
+        out_name: Optional[str] = None,
+        max_size: int = _DEFAULT_MAX_SIZE,
+    ) -> str:
         """Decompress using raw (unsafe) path handling."""
-        return self.extract(dest_dir, safe=False, out_name=out_name)
+        return self.extract(dest_dir, safe=False, out_name=out_name, max_size=max_size)

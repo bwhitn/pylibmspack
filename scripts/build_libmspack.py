@@ -11,19 +11,20 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-LIBMSPACK_VERSION = os.environ.get("PYLIBMSPACK_LIBMSPACK_VERSION", "0.10.1")
+LIBMSPACK_VERSION = os.environ.get("PYLIBMSPACK_LIBMSPACK_VERSION", "0.11")
 LIBMSPACK_URL = (
     "https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/libmspack/"
-    "0.10.1-2build2/libmspack_0.10.1.orig.tar.xz"
+    "0.11-1.1build2/libmspack_0.11.orig.tar.gz"
 )
-LIBMSPACK_SHA256 = "850c57442b850bf1bc0fc4ea8880903ebf2bed063c3c80782ee4626fbcb0e67d"
+LIBMSPACK_SHA256 = "70dd1fb2f0aecc36791b71a1e1840e62173079eadaa081192d1c323a0eeea21b"
 VENDORED_TARBALL = (
     Path(__file__).resolve().parents[1]
     / "src"
     / "pylibmspack"
     / "vendor"
-    / "libmspack_0.10.1.orig.tar.xz"
+    / "libmspack_0.11.orig.tar.gz"
 )
+SOURCE_MARKER = ".pylibmspack-source-sha256"
 
 SOURCES = [
     "mspack/system.c",
@@ -81,14 +82,20 @@ def _source_root(dst: Path) -> Path:
 
 
 def extract(tar_path: Path, dst: Path) -> Path:
+    expected_sha256 = sha256sum(tar_path)
     if dst.exists() and any(dst.iterdir()):
-        return _source_root(dst)
+        marker = dst / SOURCE_MARKER
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == expected_sha256:
+            return _source_root(dst)
+        shutil.rmtree(dst)
     dst.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(tar_path, "r:xz") as tf:
+    with tarfile.open(tar_path, "r:*") as tf:
         try:
             tf.extractall(dst, filter="data")
         except TypeError:
             tf.extractall(dst)
+    marker = dst / SOURCE_MARKER
+    marker.write_text(f"{expected_sha256}\n", encoding="utf-8")
     return _source_root(dst)
 
 
@@ -204,7 +211,7 @@ def main() -> None:
 
     out_dir = Path(args.out_dir).resolve()
     src_dir = Path(args.src_dir).resolve()
-    tarball = Path(args.tarball).resolve() if args.tarball else src_dir / "libmspack.tar.xz"
+    tarball = Path(args.tarball).resolve() if args.tarball else src_dir / VENDORED_TARBALL.name
 
     if not tarball.exists():
         if VENDORED_TARBALL.exists():
@@ -214,7 +221,7 @@ def main() -> None:
         else:
             raise RuntimeError(
                 "Vendored libmspack source tarball is missing. "
-                "Expected src/pylibmspack/vendor/libmspack_0.10.1.orig.tar.xz. "
+                f"Expected src/pylibmspack/vendor/{VENDORED_TARBALL.name}. "
                 "To allow a network download, set PYLIBMSPACK_ALLOW_DOWNLOAD=1 "
                 "or pass --tarball."
             )
