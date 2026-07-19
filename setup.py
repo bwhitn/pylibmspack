@@ -38,7 +38,7 @@ class BuildExt(build_ext):
             str(info_path),
         ]
         env = os.environ.copy()
-        env.setdefault("PYLIBMSPACK_LIBMSPACK_VERSION", "0.10.1")
+        env.setdefault("PYLIBMSPACK_LIBMSPACK_VERSION", "0.11")
         subprocess.check_call(cmd, env=env)
 
         with info_path.open("r", encoding="utf-8") as f:

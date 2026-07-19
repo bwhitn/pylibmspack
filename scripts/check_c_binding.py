@@ -11,13 +11,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BINDING = ROOT / "src" / "pylibmspack" / "_cab.c"
-VENDORED = ROOT / "src" / "pylibmspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
+VENDORED = ROOT / "src" / "pylibmspack" / "vendor" / "libmspack_0.11.orig.tar.gz"
 
 
 def extract_include_dir(tmp_dir: Path) -> Path:
     src_dir = tmp_dir / "libmspack-src"
     src_dir.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(VENDORED, "r:xz") as tf:
+    with tarfile.open(VENDORED, "r:*") as tf:
         try:
             tf.extractall(src_dir, filter="data")
         except TypeError:

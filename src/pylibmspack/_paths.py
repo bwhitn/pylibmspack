@@ -37,6 +37,36 @@ def safe_join(dest_dir: str, name: str) -> str:
     return target
 
 
+def ensure_safe_output_path(dest_dir: str, target: str) -> None:
+    """Reject symlinked safe extraction paths before opening output files."""
+    dest_dir_abs = os.path.abspath(dest_dir)
+    target_abs = os.path.abspath(target)
+    if os.path.commonpath([dest_dir_abs, target_abs]) != dest_dir_abs:
+        raise ValueError("Path traversal is not allowed")
+    if os.path.islink(dest_dir_abs):
+        raise ValueError("Destination directory must not be a symlink")
+
+    rel = os.path.relpath(target_abs, dest_dir_abs)
+    if rel in {".", ""}:
+        raise ValueError("Output path must be inside destination directory")
+    parts = rel.split(os.sep)
+    current = dest_dir_abs
+    for part in parts[:-1]:
+        current = os.path.join(current, part)
+        if os.path.islink(current):
+            raise ValueError("Output path must not contain symlinks")
+    if os.path.islink(target_abs):
+        raise ValueError("Output path must not be a symlink")
+
+
+def remove_partial_output(path: str) -> None:
+    try:
+        if os.path.lexists(path):
+            os.unlink(path)
+    except OSError:
+        pass
+
+
 def unsafe_join(dest_dir: str, name: str) -> str:
     parts = name.replace("\\", "/").split("/")
     return os.path.join(dest_dir, *parts)

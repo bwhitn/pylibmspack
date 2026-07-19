@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pylibmspack import CabArchive, CabFormatError, CabPathTraversalError
+from pylibmspack import CabArchive, CabError, CabFormatError, CabPathTraversalError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
@@ -83,6 +83,43 @@ def test_extract_all(tmp_path):
     assert _norm_newlines((tmp_path / "qtm.txt").read_bytes()) == _norm_newlines(
         (EXPECTED / "qtm.txt").read_bytes()
     )
+
+
+def test_extract_all_respects_max_files(tmp_path):
+    cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
+
+    with pytest.raises(CabError, match="max_files"):
+        cab.extract_all(str(tmp_path), max_files=2)
+
+
+def test_extract_all_respects_max_total_size(tmp_path):
+    cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
+
+    with pytest.raises(CabError, match="max_total_size"):
+        cab.extract_all(str(tmp_path), max_total_size=1)
+
+
+def test_extract_respects_max_size(tmp_path):
+    cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
+
+    with pytest.raises(CabError, match="max_size"):
+        cab.extract("mszip.txt", str(tmp_path), max_size=1)
+
+
+def test_safe_extract_rejects_symlink_output(tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    output = tmp_path / "mszip.txt"
+    try:
+        output.symlink_to(outside)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    cab = CabArchive(str(FIXTURES / "small_mszip.cab"))
+
+    with pytest.raises(CabPathTraversalError, match="symlink"):
+        cab.extract("mszip.txt", str(tmp_path))
+
+    assert outside.read_text(encoding="utf-8") == "outside"
 
 
 def test_from_bytes_and_info():

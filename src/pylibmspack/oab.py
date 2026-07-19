@@ -5,7 +5,13 @@ import tempfile
 from typing import Optional, Union
 
 from . import _cab
-from ._paths import ensure_parent, safe_join, unsafe_join
+from ._paths import (
+    ensure_parent,
+    ensure_safe_output_path,
+    remove_partial_output,
+    safe_join,
+    unsafe_join,
+)
 from .errors import OabDecompressionError, OabError, OabFormatError, OabPathTraversalError
 
 _ERR_OK = getattr(_cab, "MSPACK_ERR_OK", 0)
@@ -17,6 +23,8 @@ _ERR_CHECKSUM = getattr(_cab, "MSPACK_ERR_CHECKSUM", -1)
 _ERR_READ = getattr(_cab, "MSPACK_ERR_READ", -1)
 _ERR_WRITE = getattr(_cab, "MSPACK_ERR_WRITE", -1)
 _ERR_ARGS = getattr(_cab, "MSPACK_ERR_ARGS", -1)
+_ERR_OUTPUT_LIMIT = getattr(_cab, "PYLIBMSPACK_ERR_OUTPUT_LIMIT", -1)
+_DEFAULT_MAX_SIZE = 256 * 1024 * 1024
 
 
 def _raise_for_err(err: int, context: str) -> None:
@@ -32,6 +40,8 @@ def _raise_for_err(err: int, context: str) -> None:
         raise OabFormatError(f"{context} failed: libmspack error {err}")
     if err == _ERR_DECRUNCH:
         raise OabDecompressionError(f"{context} failed: libmspack error {err}")
+    if err == _ERR_OUTPUT_LIMIT:
+        raise OabError(f"{context} failed: output exceeds max_size")
     if err == _ERR_WRITE:
         raise OabError(f"{context} failed: unable to write output")
     if err == _ERR_ARGS:
@@ -52,6 +62,13 @@ def _unsafe_join(dest_dir: str, name: str) -> str:
 
 def _ensure_parent(path: str) -> None:
     ensure_parent(path)
+
+
+def _ensure_safe_output(dest_dir: str, path: str) -> None:
+    try:
+        ensure_safe_output_path(dest_dir, path)
+    except ValueError as exc:
+        raise OabPathTraversalError(str(exc)) from exc
 
 
 def _default_output_name(name: str) -> str:
@@ -92,7 +109,7 @@ class OabFile:
             return _default_output_name(self.path)
         return "output.oab"
 
-    def read(self, *, max_size: int = 256 * 1024 * 1024, decompbuf: int = 4096) -> bytes:
+    def read(self, *, max_size: int = _DEFAULT_MAX_SIZE, decompbuf: int = 4096) -> bytes:
         """Decompress a full OAB .LZX file and return its bytes."""
         if max_size <= 0:
             raise ValueError("max_size must be positive")
@@ -101,9 +118,9 @@ class OabFile:
             out_path = _safe_join(tmp, self.suggested_name())
             _ensure_parent(out_path)
             if self._data is not None:
-                err = _cab.oab_decompress_bytes(self._data, out_path, decompbuf)
+                err = _cab.oab_decompress_bytes(self._data, out_path, decompbuf, max_size)
             else:
-                err = _cab.oab_decompress(self.path, out_path, decompbuf)
+                err = _cab.oab_decompress(self.path, out_path, decompbuf, max_size)
             _raise_for_err(err, "decompress")
             size = os.path.getsize(out_path)
             if size > max_size:
@@ -118,19 +135,29 @@ class OabFile:
         safe: bool = True,
         out_name: Optional[str] = None,
         decompbuf: int = 4096,
+        max_size: int = _DEFAULT_MAX_SIZE,
     ) -> str:
         """Decompress a full OAB .LZX file to disk and return the output path."""
+        if max_size <= 0:
+            raise ValueError("max_size must be positive")
         _check_decompbuf(decompbuf)
         name = out_name or self.suggested_name()
         if not name:
             raise OabError("output name is required")
         out_path = _safe_join(dest_dir, name) if safe else _unsafe_join(dest_dir, name)
         _ensure_parent(out_path)
+        if safe:
+            _ensure_safe_output(dest_dir, out_path)
         if self._data is not None:
-            err = _cab.oab_decompress_bytes(self._data, out_path, decompbuf)
+            err = _cab.oab_decompress_bytes(self._data, out_path, decompbuf, max_size)
         else:
-            err = _cab.oab_decompress(self.path, out_path, decompbuf)
-        _raise_for_err(err, "decompress")
+            err = _cab.oab_decompress(self.path, out_path, decompbuf, max_size)
+        try:
+            _raise_for_err(err, "decompress")
+        except Exception:
+            if safe:
+                remove_partial_output(out_path)
+            raise
         return out_path
 
     def extract_raw(
@@ -139,9 +166,16 @@ class OabFile:
         *,
         out_name: Optional[str] = None,
         decompbuf: int = 4096,
+        max_size: int = _DEFAULT_MAX_SIZE,
     ) -> str:
         """Decompress using raw (unsafe) path handling."""
-        return self.extract(dest_dir, safe=False, out_name=out_name, decompbuf=decompbuf)
+        return self.extract(
+            dest_dir,
+            safe=False,
+            out_name=out_name,
+            decompbuf=decompbuf,
+            max_size=max_size,
+        )
 
 
 class OabPatch:
@@ -173,7 +207,7 @@ class OabPatch:
         self,
         base: Union[str, bytes],
         *,
-        max_size: int = 256 * 1024 * 1024,
+        max_size: int = _DEFAULT_MAX_SIZE,
         decompbuf: int = 4096,
     ) -> bytes:
         """Apply this incremental patch to a base OAB and return patched bytes."""
@@ -182,7 +216,7 @@ class OabPatch:
         with tempfile.TemporaryDirectory(prefix="pylibmspack-") as tmp:
             out_path = _safe_join(tmp, self.suggested_name())
             _ensure_parent(out_path)
-            self._apply_to_path(base, out_path, decompbuf=decompbuf, tmp=tmp)
+            self._apply_to_path(base, out_path, decompbuf=decompbuf, tmp=tmp, max_size=max_size)
             size = os.path.getsize(out_path)
             if size > max_size:
                 raise OabError(f"file exceeds max_size ({size} > {max_size})")
@@ -197,16 +231,26 @@ class OabPatch:
         safe: bool = True,
         out_name: Optional[str] = None,
         decompbuf: int = 4096,
+        max_size: int = _DEFAULT_MAX_SIZE,
     ) -> str:
         """Apply this incremental patch to a base OAB on disk."""
+        if max_size <= 0:
+            raise ValueError("max_size must be positive")
         _check_decompbuf(decompbuf)
         name = out_name or self.suggested_name()
         if not name:
             raise OabError("output name is required")
         out_path = _safe_join(dest_dir, name) if safe else _unsafe_join(dest_dir, name)
         _ensure_parent(out_path)
-        with tempfile.TemporaryDirectory(prefix="pylibmspack-") as tmp:
-            self._apply_to_path(base, out_path, decompbuf=decompbuf, tmp=tmp)
+        if safe:
+            _ensure_safe_output(dest_dir, out_path)
+        try:
+            with tempfile.TemporaryDirectory(prefix="pylibmspack-") as tmp:
+                self._apply_to_path(base, out_path, decompbuf=decompbuf, tmp=tmp, max_size=max_size)
+        except Exception:
+            if safe:
+                remove_partial_output(out_path)
+            raise
         return out_path
 
     def apply_raw(
@@ -216,9 +260,17 @@ class OabPatch:
         *,
         out_name: Optional[str] = None,
         decompbuf: int = 4096,
+        max_size: int = _DEFAULT_MAX_SIZE,
     ) -> str:
         """Apply this patch using raw (unsafe) path handling."""
-        return self.apply(base, dest_dir, safe=False, out_name=out_name, decompbuf=decompbuf)
+        return self.apply(
+            base,
+            dest_dir,
+            safe=False,
+            out_name=out_name,
+            decompbuf=decompbuf,
+            max_size=max_size,
+        )
 
     def _apply_to_path(
         self,
@@ -227,6 +279,7 @@ class OabPatch:
         *,
         decompbuf: int,
         tmp: str,
+        max_size: int,
     ) -> None:
         _check_decompbuf(decompbuf)
         patch_path = self.path
@@ -241,5 +294,11 @@ class OabPatch:
             with open(base_path, "wb") as f:
                 f.write(bytes(base))
 
-        err = _cab.oab_decompress_incremental(patch_path, os.fspath(base_path), out_path, decompbuf)
+        err = _cab.oab_decompress_incremental(
+            patch_path,
+            os.fspath(base_path),
+            out_path,
+            decompbuf,
+            max_size,
+        )
         _raise_for_err(err, "patch")

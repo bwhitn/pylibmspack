@@ -1,0 +1,4 @@
+kwaj_magic="KWAJ"
+kwaj_signature_tail="\x88\xf0\x27\xd1"
+kwaj_ext=".kwj"
+kwaj_ext2=".??_"

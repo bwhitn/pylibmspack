@@ -43,6 +43,13 @@ def test_hlp_max_size():
         hlp.read(max_size=1)
 
 
+def test_hlp_extract_respects_max_size(tmp_path):
+    hlp = HlpFile.from_bytes(_mshelp_literals(b"too large"))
+
+    with pytest.raises(HlpError, match="max_size"):
+        hlp.extract(str(tmp_path), out_name="sample.txt", max_size=1)
+
+
 @pytest.mark.parametrize(
     "name",
     [

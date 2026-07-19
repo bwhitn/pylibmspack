@@ -41,3 +41,10 @@ def test_szdd_max_size():
     szdd = SzddFile(str(FIXTURES / "sample.tx_"))
     with pytest.raises(SzddError):
         szdd.read(max_size=1)
+
+
+def test_szdd_extract_respects_max_size(tmp_path):
+    szdd = SzddFile(str(FIXTURES / "sample.tx_"))
+
+    with pytest.raises(SzddError, match="max_size"):
+        szdd.extract(str(tmp_path), max_size=1)

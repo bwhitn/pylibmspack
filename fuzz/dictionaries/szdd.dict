@@ -1,0 +1,4 @@
+szdd_magic="SZDD"
+szdd_signature_tail="\x88\xf0\x27\x33"
+szdd_ext=".tx_"
+szdd_ext2=".??_"

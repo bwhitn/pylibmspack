@@ -4,7 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = ROOT / "tests" / "fixtures"
-VENDORED = ROOT / "src" / "pylibmspack" / "vendor" / "libmspack_0.10.1.orig.tar.xz"
+VENDORED = ROOT / "src" / "pylibmspack" / "vendor" / "libmspack_0.11.orig.tar.gz"
 
 
 def main():
@@ -12,12 +12,10 @@ def main():
     if not VENDORED.exists():
         raise SystemExit(f"Missing vendored tarball: {VENDORED}")
 
-    with tarfile.open(VENDORED, "r:xz") as tf:
-        mszip = tf.getmember("libmspack-0.10.1alpha/test/test_files/cabd/mszip_lzx_qtm.cab")
-        normal = tf.getmember(
-            "libmspack-0.10.1alpha/test/test_files/cabd/normal_2files_1folder.cab"
-        )
-        kwaj = tf.getmember("libmspack-0.10.1alpha/test/test_files/kwajd/f00.kwj")
+    with tarfile.open(VENDORED, "r:*") as tf:
+        mszip = tf.getmember("libmspack-0.11alpha/test/test_files/cabd/mszip_lzx_qtm.cab")
+        normal = tf.getmember("libmspack-0.11alpha/test/test_files/cabd/normal_2files_1folder.cab")
+        kwaj = tf.getmember("libmspack-0.11alpha/test/test_files/kwajd/f00.kwj")
         (FIXTURES_DIR / "small_mszip.cab").write_bytes(tf.extractfile(mszip).read())
         normal_bytes = tf.extractfile(normal).read()
         (FIXTURES_DIR / "normal_2files_1folder.cab").write_bytes(normal_bytes)
