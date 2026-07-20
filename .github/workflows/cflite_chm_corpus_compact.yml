@@ -62,7 +62,7 @@ jobs:
 
           tar -cf "${artifact_name}.tar" -C "$work_dir/pruned" .
       - name: Upload compacted corpus
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cifuzz-corpus-pylibmspack_fuzz_chm
           path: cifuzz-corpus-pylibmspack_fuzz_chm.tar
