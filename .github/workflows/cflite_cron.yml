@@ -28,7 +28,7 @@ jobs:
           - oab
           - oab_patch
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build fuzzers
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@v1
