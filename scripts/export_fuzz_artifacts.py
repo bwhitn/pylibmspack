@@ -13,9 +13,17 @@ if str(ROOT) not in sys.path:
 
 from fuzz.corpus import TARGETS, dictionary_for, seed_inputs  # noqa: E402
 
+TARGET_RSS_LIMIT_MB_OVERRIDES = {
+    "chm": 2048,
+}
+
 
 def fuzzer_name(target: str) -> str:
     return f"pylibmspack_fuzz_{target}"
+
+
+def rss_limit_mb_for(target: str, default: int) -> int:
+    return max(default, TARGET_RSS_LIMIT_MB_OVERRIDES.get(target, default))
 
 
 def write_options(
@@ -62,7 +70,13 @@ def main() -> int:
     selected = args.target or list(TARGETS)
     for target in selected:
         copy_dictionary(out_dir, target)
-        write_options(out_dir, target, args.max_len, args.timeout, args.rss_limit_mb)
+        write_options(
+            out_dir,
+            target,
+            args.max_len,
+            args.timeout,
+            rss_limit_mb_for(target, args.rss_limit_mb),
+        )
         write_seed_corpus(out_dir, target, include_fixtures=args.include_fixtures)
     return 0
 

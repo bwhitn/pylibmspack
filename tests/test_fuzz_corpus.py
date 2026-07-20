@@ -1,7 +1,12 @@
 import zipfile
 
 from fuzz.corpus import dictionary_for, oab_patch_pair, seed_corpus, seed_inputs
-from scripts.export_fuzz_artifacts import copy_dictionary, write_options, write_seed_corpus
+from scripts.export_fuzz_artifacts import (
+    copy_dictionary,
+    rss_limit_mb_for,
+    write_options,
+    write_seed_corpus,
+)
 
 
 def test_all_target_seeds_route_to_native_selector_bytes():
@@ -55,3 +60,9 @@ def test_export_fuzz_artifacts_use_oss_fuzz_filenames(tmp_path):
     with zipfile.ZipFile(tmp_path / "pylibmspack_fuzz_cab_seed_corpus.zip") as zf:
         assert "cab_magic" in zf.namelist()
         assert zf.read("cab_magic") == b"MSCF"
+
+
+def test_chm_export_uses_larger_rss_limit_for_cflite_pruning():
+    assert rss_limit_mb_for("cab", 1024) == 1024
+    assert rss_limit_mb_for("chm", 1024) == 2048
+    assert rss_limit_mb_for("chm", 4096) == 4096
