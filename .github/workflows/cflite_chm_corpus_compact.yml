@@ -1,0 +1,69 @@
+name: Compact CHM Corpus
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  compact:
+    name: Compact CHM Corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build CHM fuzzer
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        env:
+          CFL_EXTRA_TARGETS: chm
+        with:
+          language: c++
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - name: Compact corpus
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          artifact_name="cifuzz-corpus-pylibmspack_fuzz_chm"
+          work_dir="build/chm-corpus-compact"
+          mkdir -p "$work_dir/download" "$work_dir/corpus" "$work_dir/pruned"
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+            --paginate \
+            --jq ".artifacts[] | select(.name==\"${artifact_name}\" and (.expired|not)) | .id" \
+            > "$work_dir/artifact_ids"
+          artifact_id="$(sed -n '1p' "$work_dir/artifact_ids")"
+          if [[ -z "$artifact_id" ]]; then
+            echo "No existing ${artifact_name} artifact found." >&2
+            exit 1
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            > "$work_dir/corpus.zip"
+          unzip -q "$work_dir/corpus.zip" -d "$work_dir/download"
+          tar -xf "$work_dir/download/${artifact_name}.tar" -C "$work_dir/corpus"
+
+          ./build-out/pylibmspack_fuzz_chm \
+            -merge=1 \
+            -rss_limit_mb=2048 \
+            -timeout=10 \
+            "$work_dir/pruned" \
+            "$work_dir/corpus"
+
+          echo "Downloaded corpus:"
+          find "$work_dir/corpus" -type f | wc -l
+          du -sh "$work_dir/corpus"
+          echo "Pruned corpus:"
+          find "$work_dir/pruned" -type f | wc -l
+          du -sh "$work_dir/pruned"
+
+          tar -cf "${artifact_name}.tar" -C "$work_dir/pruned" .
+      - name: Upload compacted corpus
+        uses: actions/upload-artifact@v4
+        with:
+          name: cifuzz-corpus-pylibmspack_fuzz_chm
+          path: cifuzz-corpus-pylibmspack_fuzz_chm.tar
+          retention-days: 90

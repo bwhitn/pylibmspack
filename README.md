@@ -97,6 +97,8 @@ and run the native libFuzzer targets:
 - `cflite_pr.yml` fuzzes pull requests for 10 minutes.
 - `cflite_batch.yml` runs a weekly one-hour batch campaign.
 - `cflite_cron.yml` performs scheduled corpus pruning.
+- `cflite_chm_corpus_compact.yml` manually compacts the CHM corpus artifact if
+  it grows too large for the standard pruning job.
 
 Optional compatibility check from a local `oss-fuzz` checkout:
 
