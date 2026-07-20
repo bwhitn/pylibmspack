@@ -29,13 +29,12 @@ jobs:
           - oab_patch
     steps:
       - uses: actions/checkout@v6
-      - name: Select fuzz target
-        run: printf '%s\n' '${{ matrix.fuzz-target }}' > .clusterfuzzlite/targets
       - name: Build fuzzers
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@v1
         env:
           CFL_TARGETS: ${{ matrix.fuzz-target }}
+          CFL_EXTRA_TARGETS: ${{ matrix.fuzz-target }}
         with:
           language: c++
           github-token: ${{ secrets.GITHUB_TOKEN }}

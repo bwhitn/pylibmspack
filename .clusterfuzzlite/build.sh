@@ -2,7 +2,7 @@
 
 cd "$SRC/pylibmspack"
 
-target_spec="${CFL_TARGETS:-}"
+target_spec="${CFL_TARGETS:-${CFL_EXTRA_TARGETS:-}}"
 target_file=".clusterfuzzlite/targets"
 if [[ -z "$target_spec" && -f "$target_file" ]]; then
   target_spec="$(tr '\n' ',' < "$target_file")"
