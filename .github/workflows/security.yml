@@ -145,7 +145,7 @@ jobs:
           --runs 128
       - name: Upload Atheris crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: atheris-fuzz-artifacts
           path: build/fuzz-artifacts/atheris
@@ -173,7 +173,7 @@ jobs:
           --runs 128
       - name: Upload libFuzzer crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: libfuzzer-fuzz-artifacts
           path: build/fuzz-artifacts/libfuzzer
