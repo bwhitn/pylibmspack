@@ -9,13 +9,33 @@ permissions: read-all
 
 jobs:
   prune:
-    name: Corpus Pruning
+    name: Corpus Pruning (${{ matrix.fuzz-target }})
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.fuzz-target }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        fuzz-target:
+          - all
+          - cab
+          - chm
+          - szdd
+          - kwaj
+          - hlp
+          - oab
+          - oab_patch
     steps:
       - uses: actions/checkout@v6
+      - name: Select fuzz target
+        run: printf '%s\n' '${{ matrix.fuzz-target }}' > .clusterfuzzlite/targets
       - name: Build fuzzers
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        env:
+          CFL_TARGETS: ${{ matrix.fuzz-target }}
         with:
           language: c++
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -29,4 +49,4 @@ jobs:
           mode: prune
           sanitizer: address
           output-sarif: true
-          parallel-fuzzing: true
+          parallel-fuzzing: false
